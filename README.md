@@ -19,9 +19,9 @@ AutoHotkey v2 脚本，合并显示大小写、输入法和复制状态提示。
 
 提示会在鼠标位置附近显示，自动消失。
 
-| 小写 + 中文 | 大写 + 英文 |
-|:-----------:|:-----------:|
-| ![](preview-lowercase-cn.png) | ![](preview-uppercase-en.png) |
+| 小写 + 中文 | 大写 + 英文 | 复制提示 |
+|:-----------:|:-----------:|:--------:|
+| ![](preview-lowercase-cn.png) | ![](preview-uppercase-en.png) | ![](preview-copy.jpg) |
 
 ## 文件说明
 
