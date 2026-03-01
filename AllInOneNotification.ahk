@@ -99,31 +99,39 @@ RemoveCapsTip() {
 }
 
 ; ============================================================
-; 剪贴板变化回调函数
-; dataType: 0=剪贴板为空, 1=文本, 2=图片, 4=文件
+; 剪贴板变化回调函数 (AutoHotkey v2)
+; dataType: 0=空, 1=文本或文件, 2=非文本(图片等)
 ; ============================================================
 ClipChanged(dataType) {
     global copyShowDuration
 
-    if (dataType = 1) {
-        ; 获取剪贴板文本长度
-        text := A_Clipboard
-        length := StrLen(text)
+    ; 剪贴板格式常量
+    ; CF_BITMAP = 2, CF_DIB = 8, CF_DIBV5 = 17, CF_HDROP = 15
+    isFile := DllCall("IsClipboardFormatAvailable", "UInt", 15)
+    isImage := DllCall("IsClipboardFormatAvailable", "UInt", 2)
+          || DllCall("IsClipboardFormatAvailable", "UInt", 8)
+          || DllCall("IsClipboardFormatAvailable", "UInt", 17)
 
-        ; 显示简洁提示
-        ToolTip("已复制：" . length . " 字符")
-        SetTimer(RemoveCopyTip, copyShowDuration)
-    }
-    else if (dataType = 2) {
-        ToolTip("已复制：图片")
-        SetTimer(RemoveCopyTip, copyShowDuration)
-    }
-    else if (dataType = 4) {
-        ; 统计文件数量
+    if (isFile) {
+        ; 复制的是文件
         files := StrSplit(A_Clipboard, "`n", "`r")
         count := files.Length
         ToolTip("已复制：" . count . " 个文件")
         SetTimer(RemoveCopyTip, copyShowDuration)
+    }
+    else if (isImage) {
+        ; 复制的是图片
+        ToolTip("已复制：图片")
+        SetTimer(RemoveCopyTip, copyShowDuration)
+    }
+    else if (dataType = 1 || dataType = 2) {
+        ; 复制的是文本 (dataType=2 可能是图片，但如果上面没检测到就当文本处理)
+        text := A_Clipboard
+        length := StrLen(text)
+        if (length > 0) {
+            ToolTip("已复制：" . length . " 字符")
+            SetTimer(RemoveCopyTip, copyShowDuration)
+        }
     }
 }
 
