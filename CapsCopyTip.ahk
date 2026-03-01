@@ -184,6 +184,9 @@ ShowSettings(*) {
     settingsGui.Add("Button", "x120 y275 w80 Default", "保存").OnEvent("Click", SaveAndClose)
     settingsGui.Add("Button", "x220 y275 w80", "取消").OnEvent("Click", (*) => settingsGui.Destroy())
 
+    ; GitHub 链接
+    settingsGui.Add("Link", "x100 y315", '<a href="https://github.com/Ekko7778/AllInOneNotification">GitHub @Ekko7778</a>')
+
     ResetDefaults(*) {
         ; 恢复默认值并更新界面
         capsCheck.Value := true
@@ -230,7 +233,7 @@ ShowSettings(*) {
         ShowTip("设置已保存", 800)
     }
 
-    settingsGui.Show("w340 h320")
+    settingsGui.Show("w340 h340")
 }
 
 ; ============================================================
