@@ -28,6 +28,7 @@ global tipTopOffset := 50         ; 屏幕顶部偏移距离(像素)
 global tipBottomOffset := 100     ; 屏幕底部偏移距离(像素)
 global tipFontSize := 9           ; 字体大小
 global tipFontBold := true        ; 字体加粗
+global tipLightMode := false      ; 浅色模式 (false=深色, true=浅色)
 
 ; 提示 GUI
 global tipGui := ""
@@ -111,6 +112,7 @@ LoadConfig() {
         tipBottomOffset := IniRead(configPath, "Settings", "TipBottomOffset", 100)
         tipFontSize := IniRead(configPath, "Settings", "TipFontSize", 9)
         tipFontBold := IniRead(configPath, "Settings", "TipFontBold", 1) = 1
+        tipLightMode := IniRead(configPath, "Settings", "TipLightMode", 0) = 1
     } catch {
         ; 读取失败，使用默认值
     }
@@ -130,6 +132,7 @@ SaveConfig() {
         IniWrite(tipBottomOffset, configPath, "Settings", "TipBottomOffset")
         IniWrite(tipFontSize, configPath, "Settings", "TipFontSize")
         IniWrite(tipFontBold ? 1 : 0, configPath, "Settings", "TipFontBold")
+        IniWrite(tipLightMode ? 1 : 0, configPath, "Settings", "TipLightMode")
     } catch as e {
         MsgBox("保存配置失败：" . e.Message, "错误", 16)
     }
@@ -216,20 +219,22 @@ ShowSettings(*) {
     bottomOffsetEdit := settingsGui.Add("Edit", "x150 y248 w40", tipBottomOffset)
     settingsGui.Add("Text", "x195 y251", "px")
 
-    ; === 字体样式 ===
-    settingsGui.Add("GroupBox", "x10 y285 w300 h50", "字体样式")
-    settingsGui.Add("Text", "x25 y305 w40", "字号:")
-    fontSizeEdit := settingsGui.Add("Edit", "x65 y302 w40", tipFontSize)
-    boldCheck := settingsGui.Add("CheckBox", "x120 y305 w60", "加粗")
+    ; === 外观样式 ===
+    settingsGui.Add("GroupBox", "x10 y285 w300 h70", "外观样式")
+    lightModeCheck := settingsGui.Add("CheckBox", "x25 y305 w80", "浅色模式")
+    lightModeCheck.Value := tipLightMode
+    settingsGui.Add("Text", "x25 y328 w40", "字号:")
+    fontSizeEdit := settingsGui.Add("Edit", "x65 y325 w40", tipFontSize)
+    boldCheck := settingsGui.Add("CheckBox", "x120 y328 w60", "加粗")
     boldCheck.Value := tipFontBold
 
     ; === 按钮 ===
-    settingsGui.Add("Button", "x25 y345 w80", "恢复默认").OnEvent("Click", ResetDefaults)
-    settingsGui.Add("Button", "x125 y345 w80 Default", "保存").OnEvent("Click", SaveAndClose)
-    settingsGui.Add("Button", "x225 y345 w80", "取消").OnEvent("Click", (*) => settingsGui.Destroy())
+    settingsGui.Add("Button", "x25 y365 w80", "恢复默认").OnEvent("Click", ResetDefaults)
+    settingsGui.Add("Button", "x125 y365 w80 Default", "保存").OnEvent("Click", SaveAndClose)
+    settingsGui.Add("Button", "x225 y365 w80", "取消").OnEvent("Click", (*) => settingsGui.Destroy())
 
     ; GitHub 链接
-    settingsGui.Add("Link", "x105 y385", '<a href="https://github.com/Ekko7778/AllInOneNotification">GitHub @Ekko7778</a>')
+    settingsGui.Add("Link", "x105 y405", '<a href="https://github.com/Ekko7778/AllInOneNotification">GitHub @Ekko7778</a>')
 
     ResetDefaults(*) {
         ; 恢复默认值并更新界面
@@ -243,11 +248,12 @@ ShowSettings(*) {
         bottomOffsetEdit.Value := 100
         fontSizeEdit.Value := 9
         boldCheck.Value := true
+        lightModeCheck.Value := false
     }
 
     SaveAndClose(*) {
         global enableCapsTip, enableCopyTip, capsShowDuration, copyShowDuration
-        global tipPosition, tipMouseOffset, tipTopOffset, tipBottomOffset, tipFontSize, tipFontBold
+        global tipPosition, tipMouseOffset, tipTopOffset, tipBottomOffset, tipFontSize, tipFontBold, tipLightMode
 
         ; 保存功能开关
         enableCapsTip := capsCheck.Value
@@ -282,6 +288,7 @@ ShowSettings(*) {
         ; 保存字体样式
         tipFontSize := Max(8, Min(72, Integer(fontSizeEdit.Value || 9)))
         tipFontBold := boldCheck.Value
+        tipLightMode := lightModeCheck.Value
 
         ; 应用设置
         SaveConfig()
@@ -291,7 +298,7 @@ ShowSettings(*) {
         ShowTip("设置已保存", 800)
     }
 
-    settingsGui.Show("w340 h415")
+    settingsGui.Show("w340 h435")
 }
 
 ; ============================================================
@@ -318,7 +325,7 @@ ApplySettings() {
 ; 优化：快速切换时直接更新文本，不重新创建窗口
 ; ============================================================
 ShowTip(text, duration := 0) {
-    global tipGui, tipPosition, tipMouseOffset, tipTopOffset, tipBottomOffset, tipFontSize, tipFontBold
+    global tipGui, tipPosition, tipMouseOffset, tipTopOffset, tipBottomOffset, tipFontSize, tipFontBold, tipLightMode
     static tipText := ""
     static lastWidth := 0, lastHeight := 0
 
@@ -339,9 +346,16 @@ ShowTip(text, duration := 0) {
     } else {
         ; 创建提示窗口
         tipGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20", "")
-        tipGui.BackColor := "333333"
+        ; 根据浅色/深色模式设置颜色
+        if (tipLightMode) {
+            tipGui.BackColor := "F5F5F5"
+            textColor := "333333"
+        } else {
+            tipGui.BackColor := "333333"
+            textColor := "FFFFFF"
+        }
         tipGui.SetFont("s" . tipFontSize . (tipFontBold ? " Bold" : ""), "Microsoft YaHei")
-        tipText := tipGui.Add("Text", "cFFFFFF Center r1", "  " . text . "  ")
+        tipText := tipGui.Add("Text", "c" . textColor . " Center r1", "  " . text . "  ")
 
         ; 使用 DWM 设置圆角 (Windows 11)
         try {
