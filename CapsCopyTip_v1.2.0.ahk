@@ -376,7 +376,7 @@ ShowCapsStatus() {
 
     ; 获取大小写状态
     caps := GetKeyState("CapsLock", "T")
-    capsIcon := caps ? "🔒 ABC" : "🔓 abc"
+    capsIcon := caps ? "🔒 大写" : "🔓 小写"
 
     ; 获取输入法状态
     ime := GetIMEStatus()
