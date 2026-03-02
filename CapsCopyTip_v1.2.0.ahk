@@ -77,8 +77,8 @@ if (enableCapsTip) {
 ~Shift:: {
     if (enableCapsTip) {
         KeyWait("Shift")
-        ; Shift 切换后，反转显示状态（因为 Windows 11 微软拼音不会更新传统 IME 状态）
-        SetTimer(() => ShowCapsStatus(true, true), -150)
+        ; Shift 切换后，立即反转显示状态
+        ShowCapsStatus(true, true)
     }
 }
 
@@ -315,51 +315,27 @@ ApplySettings() {
 
 ; ============================================================
 ; 显示自定义提示（替代 ToolTip）
+; 优化：快速切换时直接更新文本，不重新创建窗口
 ; ============================================================
 ShowTip(text, duration := 0) {
     global tipGui, tipPosition, tipMouseOffset, tipTopOffset, tipBottomOffset, tipFontSize, tipFontBold
     static tipText := ""
+    static lastWidth := 0, lastHeight := 0
 
     ; 获取鼠标位置（使用屏幕坐标）
     CoordMode "Mouse", "Screen"
     MouseGetPos(&mx, &my)
 
-    ; 如果 GUI 已存在且窗口有效，更新内容和位置
+    ; 如果 GUI 已存在且窗口有效，快速更新
     if (IsObject(tipGui) && WinExist("ahk_id " . tipGui.Hwnd)) {
-        ; 禁用重绘，避免闪烁
-        SendMessage(0xB, 0, 0, , "ahk_id " . tipGui.Hwnd)
-
-        ; 更新文本
+        ; 直接更新文本（最快方式）
         tipText.Value := "  " . text . "  "
 
-        ; 先隐藏状态下获取新尺寸
-        tipGui.Show("Hide AutoSize")
-        tipGui.GetPos(,, &gw, &gh)
-
-        ; 计算位置
+        ; 只在鼠标附近模式时更新位置
         if (tipPosition = 1) {
-            ; 鼠标附近
-            gx := mx + tipMouseOffset
-            gy := my + tipMouseOffset
-        } else if (tipPosition = 2) {
-            ; 屏幕中央
-            gx := (A_ScreenWidth - gw) / 2
-            gy := (A_ScreenHeight - gh) / 2
-        } else if (tipPosition = 3) {
-            ; 屏幕顶部居中
-            gx := (A_ScreenWidth - gw) / 2
-            gy := tipTopOffset
-        } else {
-            ; 屏幕底部居中
-            gx := (A_ScreenWidth - gw) / 2
-            gy := A_ScreenHeight - gh - tipBottomOffset
+            tipGui.Show("x" . (mx + tipMouseOffset) . " y" . (my + tipMouseOffset) . " NA")
         }
-
-        ; 直接在目标位置显示
-        tipGui.Show("x" . gx . " y" . gy . " NA")
-
-        ; 启用重绘
-        SendMessage(0xB, 1, 0, , "ahk_id " . tipGui.Hwnd)
+        ; 其他位置模式不需要重新计算，保持原位置
     } else {
         ; 创建提示窗口
         tipGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20", "")
@@ -375,6 +351,8 @@ ShowTip(text, duration := 0) {
         ; 先隐藏显示以获取正确尺寸
         tipGui.Show("Hide AutoSize")
         tipGui.GetPos(,, &gw, &gh)
+        lastWidth := gw
+        lastHeight := gh
 
         ; 计算位置
         if (tipPosition = 1) {
@@ -399,8 +377,7 @@ ShowTip(text, duration := 0) {
         tipGui.Show("x" . gx . " y" . gy . " NA")
     }
 
-    ; 设置自动关闭 - 无论 GUI 是否存在，都要重置定时器
-    ; 使用负数周期表示只运行一次（run-once），避免与后续调用冲突
+    ; 设置自动关闭 - 重置定时器
     if (duration > 0) {
         SetTimer(HideTip, -duration)
     }
