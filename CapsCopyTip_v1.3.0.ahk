@@ -360,7 +360,7 @@ ApplySettings() {
         }
     } else {
         if (IsObject(caretIndicatorInst)) {
-            caretIndicatorInst.markPainter.RemoveWindow()
+            caretIndicatorInst.Stop()
             caretIndicatorInst := ""
         }
     }
