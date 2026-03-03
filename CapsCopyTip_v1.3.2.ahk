@@ -19,7 +19,7 @@ Persistent
 ; ============================================================
 ; 全局设置
 ; ============================================================
-global VERSION := "1.3.1"
+global VERSION := "1.3.2"
 global capsShowDuration := 800    ; 大小写提示显示时间
 global copyShowDuration := 800    ; 复制提示显示时间
 global lastCapsState := GetKeyState("CapsLock", "T")
@@ -48,6 +48,9 @@ global caretIndicatorInst := ""
 
 ; 提示 GUI
 global tipGui := ""
+
+; 设置窗口 GUI（脚本级变量，便于独立函数清理）
+global settingsGui := ""
 
 ; 剪贴板防抖
 global lastClipboardContent := ""
@@ -221,15 +224,22 @@ SetStartup(enable) {
 }
 
 ; ============================================================
-; 设置窗口
+; 设置窗口 - 使用独立函数避免循环引用
 ; ============================================================
 ShowSettings(*) {
-    global
-    static settingsGui := ""
+    global settingsGui
 
     ; 防止多开：如果窗口已存在，直接激活
-    if (IsObject(settingsGui) && WinExist("ahk_id " . settingsGui.Hwnd)) {
-        WinActivate("ahk_id " . settingsGui.Hwnd)
+    ; 使用 try-catch 保护 Hwnd 属性访问
+    guiHwnd := 0
+    try {
+        guiHwnd := settingsGui.Hwnd
+    } catch {
+        settingsGui := ""
+    }
+
+    if (guiHwnd && WinExist("ahk_id " . guiHwnd)) {
+        WinActivate("ahk_id " . guiHwnd)
         return
     }
 
@@ -238,181 +248,158 @@ ShowSettings(*) {
 
     ; === 功能开关 ===
     settingsGui.Add("GroupBox", "x10 y10 w300 h110", "功能开关")
-    startupCheck := settingsGui.Add("CheckBox", "x20 y30 w100", "开机启动")
-    startupCheck.Value := IsStartupEnabled()
-    caretCheck := settingsGui.Add("CheckBox", "x180 y30 w100", "光标指示器")
-    caretCheck.Value := enableCaretIndicator
-    copyCheck := settingsGui.Add("CheckBox", "x20 y55 w80", "复制提示")
-    copyCheck.Value := enableCopyTip
-    capsCheck := settingsGui.Add("CheckBox", "x20 y80 w100", "大小写提示")
-    capsCheck.Value := enableCapsTip
-    imeCheck := settingsGui.Add("CheckBox", "x180 y80 w110", "显示中/英状态")
-    imeCheck.Value := showIMEStatus
-    imeCheck.Enabled := enableCapsTip  ; 大小写提示关闭时禁用
+    settingsGui.ctl_startup := settingsGui.Add("CheckBox", "x20 y30 w100", "开机启动")
+    settingsGui.ctl_startup.Value := IsStartupEnabled()
+    settingsGui.ctl_caret := settingsGui.Add("CheckBox", "x180 y30 w100", "光标指示器")
+    settingsGui.ctl_caret.Value := enableCaretIndicator
+    settingsGui.ctl_copy := settingsGui.Add("CheckBox", "x20 y55 w80", "复制提示")
+    settingsGui.ctl_copy.Value := enableCopyTip
+    settingsGui.ctl_caps := settingsGui.Add("CheckBox", "x20 y80 w100", "大小写提示")
+    settingsGui.ctl_caps.Value := enableCapsTip
+    settingsGui.ctl_ime := settingsGui.Add("CheckBox", "x180 y80 w110", "显示中/英状态")
+    settingsGui.ctl_ime.Value := showIMEStatus
+    settingsGui.ctl_ime.Enabled := enableCapsTip
 
     ; 大小写提示变化时，控制中/英状态是否可选
-    UpdateIMEState(ctrl, *) {
-        imeCheck.Enabled := ctrl.Value
-    }
-    capsCheck.OnEvent("Click", UpdateIMEState)
+    settingsGui.ctl_caps.OnEvent("Click", Settings_UpdateIMEState)
 
     ; === 显示时长 ===
     settingsGui.Add("GroupBox", "x10 y125 w300 h80", "显示时长")
     settingsGui.Add("Text", "x20 y148 w150", "大小写提示 (ms):")
-    capsEdit := settingsGui.Add("Edit", "x180 y145 w60", capsShowDuration)
+    settingsGui.ctl_capsDur := settingsGui.Add("Edit", "x180 y145 w60", capsShowDuration)
     settingsGui.Add("Text", "x20 y178 w150", "复制提示 (ms):")
-    copyEdit := settingsGui.Add("Edit", "x180 y175 w60", copyShowDuration)
+    settingsGui.ctl_copyDur := settingsGui.Add("Edit", "x180 y175 w60", copyShowDuration)
 
     ; === 提示位置 ===
     settingsGui.Add("GroupBox", "x10 y210 w300 h135", "提示位置")
-    posRadio2 := settingsGui.Add("Radio", "x20 y235 w100 +Group" . (tipPosition = 2 ? " Checked" : ""), "屏幕中央")
-    posRadio1 := settingsGui.Add("Radio", "x20 y262 w80" . (tipPosition = 1 ? " Checked" : ""), "鼠标附近")
-    posRadio3 := settingsGui.Add("Radio", "x20 y289 w80" . (tipPosition = 3 ? " Checked" : ""), "屏幕顶部")
-    posRadio4 := settingsGui.Add("Radio", "x20 y316 w80" . (tipPosition = 4 ? " Checked" : ""), "屏幕底部")
+    settingsGui.ctl_pos2 := settingsGui.Add("Radio", "x20 y235 w100 +Group" . (tipPosition = 2 ? " Checked" : ""), "屏幕中央")
+    settingsGui.ctl_pos1 := settingsGui.Add("Radio", "x20 y262 w80" . (tipPosition = 1 ? " Checked" : ""), "鼠标附近")
+    settingsGui.ctl_pos3 := settingsGui.Add("Radio", "x20 y289 w80" . (tipPosition = 3 ? " Checked" : ""), "屏幕顶部")
+    settingsGui.ctl_pos4 := settingsGui.Add("Radio", "x20 y316 w80" . (tipPosition = 4 ? " Checked" : ""), "屏幕底部")
     settingsGui.Add("Text", "x180 y265 w30", "偏移:")
-    offsetEdit := settingsGui.Add("Edit", "x220 y262 w40", tipMouseOffset)
+    settingsGui.ctl_mouseOffset := settingsGui.Add("Edit", "x220 y262 w40", tipMouseOffset)
     settingsGui.Add("Text", "x265 y265", "px")
     settingsGui.Add("Text", "x180 y292 w30", "偏移:")
-    topOffsetEdit := settingsGui.Add("Edit", "x220 y289 w40", tipTopOffset)
+    settingsGui.ctl_topOffset := settingsGui.Add("Edit", "x220 y289 w40", tipTopOffset)
     settingsGui.Add("Text", "x265 y292", "px")
     settingsGui.Add("Text", "x180 y319 w30", "偏移:")
-    bottomOffsetEdit := settingsGui.Add("Edit", "x220 y316 w40", tipBottomOffset)
+    settingsGui.ctl_bottomOffset := settingsGui.Add("Edit", "x220 y316 w40", tipBottomOffset)
     settingsGui.Add("Text", "x265 y319", "px")
 
     ; === 外观样式 ===
     settingsGui.Add("GroupBox", "x10 y350 w300 h105", "外观样式（默认深色）")
-    lightModeCheck := settingsGui.Add("CheckBox", "x20 y375 w80", "浅色模式")
-    lightModeCheck.Value := tipLightMode
+    settingsGui.ctl_lightMode := settingsGui.Add("CheckBox", "x20 y375 w80", "浅色模式")
+    settingsGui.ctl_lightMode.Value := tipLightMode
     settingsGui.Add("Text", "x20 y405 w40", "字号:")
-    fontSizeEdit := settingsGui.Add("Edit", "x60 y402 w40", tipFontSize)
-    boldCheck := settingsGui.Add("CheckBox", "x180 y405 w60", "加粗")
-    boldCheck.Value := tipFontBold
-    invertCheck := settingsGui.Add("CheckBox", "x20 y435 w150", "反转输入法检测")
-    invertCheck.Value := imeDetectInvert
+    settingsGui.ctl_fontSize := settingsGui.Add("Edit", "x60 y402 w40", tipFontSize)
+    settingsGui.ctl_bold := settingsGui.Add("CheckBox", "x180 y405 w60", "加粗")
+    settingsGui.ctl_bold.Value := tipFontBold
+    settingsGui.ctl_invert := settingsGui.Add("CheckBox", "x20 y435 w150", "反转输入法检测")
+    settingsGui.ctl_invert.Value := imeDetectInvert
 
     ; === 按钮 ===
-    settingsGui.Add("Button", "x25 y465 w80", "恢复默认").OnEvent("Click", ResetDefaults)
-    settingsGui.Add("Button", "x125 y465 w80 Default", "保存").OnEvent("Click", SaveAndClose)
-    settingsGui.Add("Button", "x225 y465 w80", "取消").OnEvent("Click", CancelAndClose)
+    settingsGui.Add("Button", "x25 y465 w80", "恢复默认").OnEvent("Click", Settings_ResetDefaults)
+    settingsGui.Add("Button", "x125 y465 w80 Default", "保存").OnEvent("Click", Settings_SaveAndClose)
+    settingsGui.Add("Button", "x225 y465 w80", "取消").OnEvent("Click", Settings_CancelAndClose)
 
     ; 窗口关闭时清理（点击 X 关闭）
-    settingsGui.OnEvent("Close", CancelAndClose)
-
-    CancelAndClose(*) {
-        settingsGui.Destroy()
-        ; 释放控件引用，帮助 GC 回收内存
-        settingsGui := ""
-        startupCheck := ""
-        caretCheck := ""
-        copyCheck := ""
-        capsCheck := ""
-        imeCheck := ""
-        capsEdit := ""
-        copyEdit := ""
-        posRadio1 := ""
-        posRadio2 := ""
-        posRadio3 := ""
-        posRadio4 := ""
-        offsetEdit := ""
-        topOffsetEdit := ""
-        bottomOffsetEdit := ""
-        lightModeCheck := ""
-        fontSizeEdit := ""
-        boldCheck := ""
-        invertCheck := ""
-    }
+    settingsGui.OnEvent("Close", Settings_CancelAndClose)
 
     ; GitHub 链接
     settingsGui.Add("Link", "x105 y505", '<a href="https://github.com/Ekko7778/AllInOneNotification">GitHub @Ekko7778</a>')
 
-    ResetDefaults(*) {
-        capsCheck.Value := true
-        imeCheck.Value := true
-        imeCheck.Enabled := true  ; 恢复启用状态
-        copyCheck.Value := true
-        caretCheck.Value := true
-        capsEdit.Value := 800
-        copyEdit.Value := 800
-        posRadio1.Value := true
-        offsetEdit.Value := 10
-        topOffsetEdit.Value := 50
-        bottomOffsetEdit.Value := 100
-        fontSizeEdit.Value := 9
-        boldCheck.Value := true
-        lightModeCheck.Value := false
-        invertCheck.Value := false
-    }
-
-    SaveAndClose(*) {
-        global enableCapsTip, enableCopyTip, enableCaretIndicator, capsShowDuration, copyShowDuration
-        global tipPosition, tipMouseOffset, tipTopOffset, tipBottomOffset, tipFontSize, tipFontBold, tipLightMode, showIMEStatus, imeDetectInvert
-
-        ; 保存功能开关
-        enableCapsTip := capsCheck.Value
-        enableCopyTip := copyCheck.Value
-        enableCaretIndicator := caretCheck.Value
-
-        ; 保存开机启动
-        SetStartup(startupCheck.Value)
-
-        ; 保存显示时长
-        capsShowDuration := Max(100, Integer(capsEdit.Value || 800))
-        copyShowDuration := Max(100, Integer(copyEdit.Value || 800))
-
-        ; 保存提示位置
-        if (posRadio1.Value)
-            tipPosition := 1
-        else if (posRadio2.Value)
-            tipPosition := 2
-        else if (posRadio3.Value)
-            tipPosition := 3
-        else if (posRadio4.Value)
-            tipPosition := 4
-        else
-            tipPosition := 1
-
-        ; 保存偏移
-        tipMouseOffset := Max(0, Min(100, Integer(offsetEdit.Value || 10)))
-        tipTopOffset := Max(0, Min(500, Integer(topOffsetEdit.Value || 50)))
-        tipBottomOffset := Max(0, Min(500, Integer(bottomOffsetEdit.Value || 100)))
-
-        ; 保存字体样式
-        tipFontSize := Max(8, Min(72, Integer(fontSizeEdit.Value || 9)))
-        tipFontBold := boldCheck.Value
-        tipLightMode := lightModeCheck.Value
-        showIMEStatus := imeCheck.Value  ; 独立保存中/英状态
-        imeDetectInvert := invertCheck.Value  ; 保存反转检测设置
-
-        ; 应用设置
-        SaveConfig()
-        ApplySettings()
-
-        settingsGui.Destroy()
-        ; 释放控件引用，帮助 GC 回收内存
-        settingsGui := ""
-        startupCheck := ""
-        caretCheck := ""
-        copyCheck := ""
-        capsCheck := ""
-        imeCheck := ""
-        capsEdit := ""
-        copyEdit := ""
-        posRadio1 := ""
-        posRadio2 := ""
-        posRadio3 := ""
-        posRadio4 := ""
-        offsetEdit := ""
-        topOffsetEdit := ""
-        bottomOffsetEdit := ""
-        lightModeCheck := ""
-        fontSizeEdit := ""
-        boldCheck := ""
-        invertCheck := ""
-
-        ShowTip("设置已保存", 800)
-    }
-
     settingsGui.Show("w340 h545")
+}
+
+; 独立的事件处理函数 - 通过参数接收 GUI，避免闭包捕获
+Settings_UpdateIMEState(ctrl, *) {
+    g := ctrl.Gui
+    g.ctl_ime.Enabled := ctrl.Value
+}
+
+Settings_ResetDefaults(ctrl, *) {
+    g := ctrl.Gui
+    g.ctl_caps.Value := true
+    g.ctl_ime.Value := true
+    g.ctl_ime.Enabled := true
+    g.ctl_copy.Value := true
+    g.ctl_caret.Value := true
+    g.ctl_capsDur.Value := 800
+    g.ctl_copyDur.Value := 800
+    g.ctl_pos1.Value := true
+    g.ctl_mouseOffset.Value := 10
+    g.ctl_topOffset.Value := 50
+    g.ctl_bottomOffset.Value := 100
+    g.ctl_fontSize.Value := 9
+    g.ctl_bold.Value := true
+    g.ctl_lightMode.Value := false
+    g.ctl_invert.Value := false
+}
+
+Settings_CancelAndClose(ctrlOrGui, *) {
+    global settingsGui
+    ; 支持从按钮或关闭事件调用
+    ; 按钮控件有 .Gui 属性，GUI 对象本身没有
+    try {
+        g := ctrlOrGui.Gui
+    } catch {
+        g := ctrlOrGui
+    }
+    g.Destroy()
+    settingsGui := ""  ; 清除全局引用，允许 GC 回收
+}
+
+Settings_SaveAndClose(ctrl, *) {
+    global enableCapsTip, enableCopyTip, enableCaretIndicator, capsShowDuration, copyShowDuration
+    global tipPosition, tipMouseOffset, tipTopOffset, tipBottomOffset, tipFontSize, tipFontBold, tipLightMode, showIMEStatus, imeDetectInvert
+
+    g := ctrl.Gui
+
+    ; 保存功能开关
+    enableCapsTip := g.ctl_caps.Value
+    enableCopyTip := g.ctl_copy.Value
+    enableCaretIndicator := g.ctl_caret.Value
+
+    ; 保存开机启动
+    SetStartup(g.ctl_startup.Value)
+
+    ; 保存显示时长
+    capsShowDuration := Max(100, Integer(g.ctl_capsDur.Value || 800))
+    copyShowDuration := Max(100, Integer(g.ctl_copyDur.Value || 800))
+
+    ; 保存提示位置
+    if (g.ctl_pos1.Value)
+        tipPosition := 1
+    else if (g.ctl_pos2.Value)
+        tipPosition := 2
+    else if (g.ctl_pos3.Value)
+        tipPosition := 3
+    else if (g.ctl_pos4.Value)
+        tipPosition := 4
+    else
+        tipPosition := 1
+
+    ; 保存偏移
+    tipMouseOffset := Max(0, Min(100, Integer(g.ctl_mouseOffset.Value || 10)))
+    tipTopOffset := Max(0, Min(500, Integer(g.ctl_topOffset.Value || 50)))
+    tipBottomOffset := Max(0, Min(500, Integer(g.ctl_bottomOffset.Value || 100)))
+
+    ; 保存字体样式
+    tipFontSize := Max(8, Min(72, Integer(g.ctl_fontSize.Value || 9)))
+    tipFontBold := g.ctl_bold.Value
+    tipLightMode := g.ctl_lightMode.Value
+    showIMEStatus := g.ctl_ime.Value
+    imeDetectInvert := g.ctl_invert.Value
+
+    ; 应用设置
+    SaveConfig()
+    ApplySettings()
+
+    ; 销毁窗口并释放引用
+    g.Destroy()
+    settingsGui := ""  ; 清除全局引用，允许 GC 回收
+
+    ShowTip("设置已保存", 800)
 }
 
 ; ============================================================
@@ -513,8 +500,9 @@ ShowTip(text, duration := 0) {
         tipGui.Show("x" . gx . " y" . gy . " NA")
     }
 
-    ; 设置自动关闭
+    ; 设置自动关闭（先取消旧定时器，防止累积）
     if (duration > 0) {
+        SetTimer(HideTip, 0)
         SetTimer(HideTip, -duration)
     }
 }

@@ -2,6 +2,17 @@
 
 All notable changes to CapsCopyTip will be documented in this file.
 
+## [1.3.2] - 2026-03-03
+
+### Fixed
+- 🐛 彻底修复设置窗口内存泄漏问题（重构代码结构，打破循环引用）
+  - 将嵌套函数改为独立函数，避免闭包捕获变量
+  - 控件存储为 GUI 属性，而非局部变量
+  - 正确清理全局引用，允许 GC 回收内存
+
+### Changed
+- ♻️ 重构 `ShowSettings` 函数架构，提升代码可维护性
+
 ## [1.3.1] - 2026-03-03
 
 ### Added
