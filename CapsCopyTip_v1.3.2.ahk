@@ -17,33 +17,60 @@ Persistent
 #include lib\utils\Merge.ahk
 
 ; ============================================================
-; 全局设置（默认配置）
-; 注意：修改以下数值会改变脚本的默认配置
+; 默认配置（唯一维护处）
+; 修改以下数值会改变脚本的默认配置
 ; 用户也可以在设置窗口中修改，保存后会写入 config.ini 覆盖默认值
 ; ============================================================
+global DefaultConfig := {
+    ; 功能开关
+    enableCapsTip: true,         ; 大小写提示: true=启用, false=禁用
+    enableCopyTip: true,         ; 复制提示: true=启用, false=禁用
+    enableCaretIndicator: true,  ; 光标指示器: true=启用, false=禁用
+    showIMEStatus: true,         ; 显示中/英状态: true=显示, false=隐藏
+    imeDetectInvert: false,      ; 反转输入法检测: true=反转（某些输入法需要）, false=正常
+
+    ; 显示时长
+    capsShowDuration: 800,       ; 大小写提示显示时间 (ms)
+    copyShowDuration: 800,       ; 复制提示显示时间 (ms)
+
+    ; 提示位置
+    tipPosition: 1,              ; 提示位置: 1=跟随鼠标, 2=屏幕中央, 3=屏幕顶部, 4=屏幕底部
+    tipMouseOffset: 20,          ; 跟随鼠标模式偏移 (px)
+    tipTopOffset: 50,            ; 屏幕顶部模式偏移 (px)
+    tipBottomOffset: 100,        ; 屏幕底部模式偏移 (px)
+
+    ; 外观设置
+    tipFontSize: 9,              ; 字号 (8-72)
+    tipFontBold: true,           ; 字体加粗: true=加粗, false=正常
+    tipLightMode: false          ; 颜色模式: false=深色, true=浅色
+}
+
+; ============================================================
+; 全局变量（从 DefaultConfig 初始化）
+; ============================================================
 global VERSION := "1.3.3"
-global capsShowDuration := 800    ; 大小写提示显示时间 (ms)
-global copyShowDuration := 800    ; 复制提示显示时间 (ms)
+global capsShowDuration := DefaultConfig.capsShowDuration
+global copyShowDuration := DefaultConfig.copyShowDuration
 global lastCapsState := GetKeyState("CapsLock", "T")
 global configPath := A_ScriptDir . "\config.ini"
 
 ; 功能开关
-global enableCapsTip := true      ; 大小写提示: true=启用, false=禁用
-global enableCopyTip := true      ; 复制提示: true=启用, false=禁用
-global enableCaretIndicator := true  ; 光标指示器: true=启用, false=禁用
-global showIMEStatus := true      ; 显示中/英状态: true=显示, false=隐藏
-global imeDetectInvert := false   ; 反转输入法检测: true=反转（某些输入法需要）, false=正常
+global enableCapsTip := DefaultConfig.enableCapsTip
+global enableCopyTip := DefaultConfig.enableCopyTip
+global enableCaretIndicator := DefaultConfig.enableCaretIndicator
+global showIMEStatus := DefaultConfig.showIMEStatus
+global imeDetectInvert := DefaultConfig.imeDetectInvert
 
 ; 提示位置设置
-global tipPosition := 1           ; 提示位置: 1=跟随鼠标, 2=屏幕中央, 3=屏幕顶部, 4=屏幕底部
-global tipMouseOffset := 10       ; 跟随鼠标模式偏移 (px)
-global tipTopOffset := 50         ; 屏幕顶部模式偏移 (px)
-global tipBottomOffset := 100     ; 屏幕底部模式偏移 (px)
+global tipPosition := DefaultConfig.tipPosition
+global tipMouseOffset := DefaultConfig.tipMouseOffset
+global tipTopOffset := DefaultConfig.tipTopOffset
+global tipBottomOffset := DefaultConfig.tipBottomOffset
 
 ; 外观设置
-global tipFontSize := 9           ; 字号 (8-72)
-global tipFontBold := true        ; 字体加粗: true=加粗, false=正常
-global tipLightMode := false      ; 颜色模式: false=深色, true=浅色
+global tipFontSize := DefaultConfig.tipFontSize
+global tipFontBold := DefaultConfig.tipFontBold
+global tipLightMode := DefaultConfig.tipLightMode
 
 ; 光标指示器实例
 global caretIndicatorInst := ""
@@ -353,31 +380,35 @@ Settings_UpdateIMEState(ctrl, *) {
 }
 
 Settings_ResetDefaults(ctrl, *) {
+    global DefaultConfig
     g := ctrl.Gui
 
     ; ========== 功能开关 ==========
-    g.ctl_startup.Value := false      ; 开机启动: false=关闭, true=开启
-    g.ctl_caps.Value := true          ; 大小写提示
-    g.ctl_ime.Value := true           ; 显示中/英状态
-    g.ctl_ime.Enabled := true         ; 启用中/英状态选项
-    g.ctl_copy.Value := true          ; 复制提示
-    g.ctl_caret.Value := true         ; 光标指示器
+    g.ctl_startup.Value := false      ; 开机启动（从注册表读取，不在 DefaultConfig 中）
+    g.ctl_caps.Value := DefaultConfig.enableCapsTip
+    g.ctl_ime.Value := DefaultConfig.showIMEStatus
+    g.ctl_ime.Enabled := DefaultConfig.enableCapsTip
+    g.ctl_copy.Value := DefaultConfig.enableCopyTip
+    g.ctl_caret.Value := DefaultConfig.enableCaretIndicator
 
     ; ========== 显示时长 ==========
-    g.ctl_capsDur.Value := 800        ; 大小写提示显示时间 (ms)
-    g.ctl_copyDur.Value := 800        ; 复制提示显示时间 (ms)
+    g.ctl_capsDur.Value := DefaultConfig.capsShowDuration
+    g.ctl_copyDur.Value := DefaultConfig.copyShowDuration
 
     ; ========== 提示位置 ==========
-    g.ctl_pos1.Value := true          ; 位置: 1=跟随鼠标, 2=屏幕中央, 3=屏幕顶部, 4=屏幕底部
-    g.ctl_mouseOffset.Value := 10     ; 鼠标模式偏移 (px)
-    g.ctl_topOffset.Value := 50       ; 顶部模式偏移 (px)
-    g.ctl_bottomOffset.Value := 100   ; 底部模式偏移 (px)
+    g.ctl_pos1.Value := (DefaultConfig.tipPosition = 1)
+    g.ctl_pos2.Value := (DefaultConfig.tipPosition = 2)
+    g.ctl_pos3.Value := (DefaultConfig.tipPosition = 3)
+    g.ctl_pos4.Value := (DefaultConfig.tipPosition = 4)
+    g.ctl_mouseOffset.Value := DefaultConfig.tipMouseOffset
+    g.ctl_topOffset.Value := DefaultConfig.tipTopOffset
+    g.ctl_bottomOffset.Value := DefaultConfig.tipBottomOffset
 
     ; ========== 外观样式 ==========
-    g.ctl_fontSize.Value := 9         ; 字号 (8-72)
-    g.ctl_bold.Value := true          ; 字体加粗
-    g.ctl_lightMode.Value := false    ; 浅色模式: false=深色, true=浅色
-    g.ctl_invert.Value := false       ; 反转输入法检测逻辑
+    g.ctl_fontSize.Value := DefaultConfig.tipFontSize
+    g.ctl_bold.Value := DefaultConfig.tipFontBold
+    g.ctl_lightMode.Value := DefaultConfig.tipLightMode
+    g.ctl_invert.Value := DefaultConfig.imeDetectInvert
 }
 
 Settings_CancelAndClose(ctrlOrGui, *) {
@@ -486,6 +517,11 @@ ApplySettings() {
 ShowTip(text, duration := 0) {
     global tipGui, tipPosition, tipMouseOffset, tipTopOffset, tipBottomOffset, tipFontSize, tipFontBold, tipLightMode
     static tipText := ""
+    static isCreating := false  ; 防并发锁
+
+    ; 如果正在创建中，直接返回（防止并发创建多个窗口）
+    if (isCreating)
+        return
 
     ; 如果 GUI 已存在、窗口有效、且文本控件有效，快速更新
     if (IsObject(tipGui) && WinExist("ahk_id " . tipGui.Hwnd) && IsObject(tipText)) {
@@ -499,12 +535,16 @@ ShowTip(text, duration := 0) {
             tipGui.Show("x" . (mx + tipMouseOffset) . " y" . (my + tipMouseOffset) . " NA")
         }
     } else {
+        ; 设置创建锁
+        isCreating := true
+
         ; 销毁旧的 GUI（防止重复窗口）
         if (IsObject(tipGui)) {
             try tipGui.Destroy()
             tipGui := ""
             tipText := ""
         }
+
         ; 创建提示窗口
         tipGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20", "")
         ; 根据浅色/深色模式设置颜色
@@ -545,6 +585,9 @@ ShowTip(text, duration := 0) {
         }
 
         tipGui.Show("x" . gx . " y" . gy . " NA")
+
+        ; 释放创建锁
+        isCreating := false
     }
 
     ; 设置自动关闭（先取消旧定时器，防止累积）
@@ -624,6 +667,7 @@ ShowCapsStatus(forceRefreshIME := false, toggleMode := false) {
 ; 获取输入法中/英状态
 ; ============================================================
 GetIMEStatus(forceRefresh := false) {
+    global imeDetectInvert
     static lastResult := "英"
     static lastCheckTime := 0
     static lastWindowHash := 0
@@ -634,7 +678,7 @@ GetIMEStatus(forceRefresh := false) {
 
     currentResult := ""
     currentWindowHash := 0
-    
+
     try {
         hWnd := WinExist("A")
         if (hWnd) {
@@ -643,7 +687,7 @@ GetIMEStatus(forceRefresh := false) {
                 return lastResult
             }
         }
-        
+
         currentResult := DetectIMEViaKeyboardLayout()
         if (currentResult = "") {
             currentResult := DetectIMEViaIMM32()
@@ -652,6 +696,9 @@ GetIMEStatus(forceRefresh := false) {
     }
 
     if (currentResult != "") {
+        ; 统一处理反转逻辑
+        if (imeDetectInvert)
+            currentResult := (currentResult = "中") ? "英" : "中"
         lastResult := currentResult
         lastWindowHash := currentWindowHash
     }
@@ -700,7 +747,6 @@ DetectIMEViaKeyboardLayout() {
 ; 通过 IMM32 窗口消息检测输入法状态
 ; ============================================================
 DetectIMEViaIMM32() {
-    global imeDetectInvert
     savedDetectHiddenWindows := A_DetectHiddenWindows
 
     try {
@@ -714,11 +760,7 @@ DetectIMEViaIMM32() {
         if (hIMEWnd) {
             result := SendMessage(0x283, 0x001, 0, , "ahk_id " . hIMEWnd)
             DetectHiddenWindows(savedDetectHiddenWindows)
-            ; 根据设置决定是否反转检测逻辑
-            if (imeDetectInvert)
-                return (result = 0) ? "英" : "中"
-            else
-                return (result = 0) ? "中" : "英"
+            return (result = 0) ? "中" : "英"
         }
 
         DetectHiddenWindows(savedDetectHiddenWindows)
