@@ -760,7 +760,8 @@ DetectIMEViaIMM32() {
         if (hIMEWnd) {
             result := SendMessage(0x283, 0x001, 0, , "ahk_id " . hIMEWnd)
             DetectHiddenWindows(savedDetectHiddenWindows)
-            return (result = 0) ? "中" : "英"
+            ; 按位判断：bit 0 = 0 表示英文模式，bit 0 = 1 表示中文模式
+            return (result & 1) ? "英" : "中"
         }
 
         DetectHiddenWindows(savedDetectHiddenWindows)
