@@ -1,4 +1,4 @@
-# AllInOneNotification
+# CapsCopyTip
 
 AutoHotkey v2 脚本，合并显示大小写、输入法和复制状态提示。
 
