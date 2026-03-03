@@ -1,11 +1,13 @@
 ; ============================================================
-; CapsCopyTip v1.3.0 (AutoHotkey v2)
+; CapsCopyTip v1.3.3 (AutoHotkey v2)
 ; 功能：合并大小写提示 + 复制提示 + 光标语言标记
 ; - 大小写/输入法：🔒 大写 | 中 / 🔓 小写 | 英
 ; - 复制提示：显示复制的字符数/图片/文件数
 ; - 光标标记：在文本光标旁显示语言状态（内置 CaretIndicator）
 ; - 右键托盘图标可打开设置
 ; ============================================================
+
+
 
 #SingleInstance Force
 Persistent
@@ -19,7 +21,7 @@ Persistent
 ; ============================================================
 ; 全局设置
 ; ============================================================
-global VERSION := "1.3.2"
+global VERSION := "1.3.3"
 global capsShowDuration := 800    ; 大小写提示显示时间
 global copyShowDuration := 800    ; 复制提示显示时间
 global lastCapsState := GetKeyState("CapsLock", "T")
@@ -55,8 +57,11 @@ global settingsGui := ""
 ; 剪贴板防抖
 global lastClipboardContent := ""
 global lastClipboardTime := 0
+global clipboardProcessing := false
 
 A_TrayTip := "CapsCopyTip v" . VERSION . " - 大小写+输入法+复制+光标指示"
+
+OnExit(OnScriptExit)
 
 ; ============================================================
 ; 托盘菜单设置
@@ -96,7 +101,7 @@ if (enableCaretIndicator) {
 ; 大小写监听
 ; ============================================================
 if (enableCapsTip) {
-    SetTimer(CheckCapsLock, 30)
+    SetTimer(CheckCapsLock, 50)
 }
 
 ; Shift 组合键检测：使用 InputHook 监控按键
@@ -109,7 +114,7 @@ global shiftInputHook := ""
             return
 
         ; 启动 InputHook 监控任意按键（非阻塞）
-        shiftInputHook := InputHook("V L0 T0.5", "{Shift}")
+        shiftInputHook := InputHook("V L1 T0.5", "{Shift}")
         shiftInputHook.Start()
 
         KeyWait("Shift")
@@ -132,6 +137,28 @@ if (enableCopyTip) {
 }
 
 return
+
+OnScriptExit(exitReason, exitCode) {
+    global tipGui, settingsGui, caretIndicatorInst
+    
+    SetTimer(CheckCapsLock, 0)
+    SetTimer(HideTip, 0)
+    
+    if (IsObject(tipGui)) {
+        tipGui.Destroy()
+        tipGui := ""
+    }
+    
+    if (IsObject(settingsGui)) {
+        settingsGui.Destroy()
+        settingsGui := ""
+    }
+    
+    if (IsObject(caretIndicatorInst)) {
+        caretIndicatorInst.Stop()
+        caretIndicatorInst := ""
+    }
+}
 
 ; ============================================================
 ; 配置管理
@@ -230,11 +257,15 @@ ShowSettings(*) {
     global settingsGui
 
     ; 防止多开：如果窗口已存在，直接激活
-    ; 使用 try-catch 保护 Hwnd 属性访问
+    ; 使用 try-catch 保护 Hwnd 属性访问，增加类型检查
     guiHwnd := 0
-    try {
-        guiHwnd := settingsGui.Hwnd
-    } catch {
+    if (IsObject(settingsGui)) {
+        try {
+            guiHwnd := settingsGui.Hwnd
+        } catch {
+            settingsGui := ""
+        }
+    } else {
         settingsGui := ""
     }
 
@@ -273,7 +304,7 @@ ShowSettings(*) {
     ; === 提示位置 ===
     settingsGui.Add("GroupBox", "x10 y210 w300 h135", "提示位置")
     settingsGui.ctl_pos2 := settingsGui.Add("Radio", "x20 y235 w100 +Group" . (tipPosition = 2 ? " Checked" : ""), "屏幕中央")
-    settingsGui.ctl_pos1 := settingsGui.Add("Radio", "x20 y262 w80" . (tipPosition = 1 ? " Checked" : ""), "鼠标附近")
+    settingsGui.ctl_pos1 := settingsGui.Add("Radio", "x20 y262 w80" . (tipPosition = 1 ? " Checked" : ""), "跟随鼠标")
     settingsGui.ctl_pos3 := settingsGui.Add("Radio", "x20 y289 w80" . (tipPosition = 3 ? " Checked" : ""), "屏幕顶部")
     settingsGui.ctl_pos4 := settingsGui.Add("Radio", "x20 y316 w80" . (tipPosition = 4 ? " Checked" : ""), "屏幕底部")
     settingsGui.Add("Text", "x180 y265 w30", "偏移:")
@@ -411,7 +442,7 @@ ApplySettings() {
     ; 重新设置大小写监听
     SetTimer(CheckCapsLock, 0)  ; 先停止
     if (enableCapsTip) {
-        SetTimer(CheckCapsLock, 30)
+        SetTimer(CheckCapsLock, 50)
     }
 
     ; 应用光标指示器设置
@@ -442,14 +473,13 @@ ApplySettings() {
 ShowTip(text, duration := 0) {
     global tipGui, tipPosition, tipMouseOffset, tipTopOffset, tipBottomOffset, tipFontSize, tipFontBold, tipLightMode
     static tipText := ""
-    static lastWidth := 0, lastHeight := 0
 
     ; 获取鼠标位置（使用屏幕坐标）
     CoordMode "Mouse", "Screen"
     MouseGetPos(&mx, &my)
 
-    ; 如果 GUI 已存在且窗口有效，快速更新
-    if (IsObject(tipGui) && WinExist("ahk_id " . tipGui.Hwnd)) {
+    ; 如果 GUI 已存在、窗口有效、且文本控件有效，快速更新
+    if (IsObject(tipGui) && WinExist("ahk_id " . tipGui.Hwnd) && IsObject(tipText)) {
         ; 直接更新文本（最快方式）
         tipText.Value := "  " . text . "  "
 
@@ -479,8 +509,6 @@ ShowTip(text, duration := 0) {
         ; 先隐藏显示以获取正确尺寸
         tipGui.Show("Hide AutoSize")
         tipGui.GetPos(,, &gw, &gh)
-        lastWidth := gw
-        lastHeight := gh
 
         ; 计算位置
         if (tipPosition = 1) {
@@ -535,10 +563,17 @@ CheckCapsLock() {
 ; ============================================================
 ShowCapsStatus(forceRefreshIME := false, toggleMode := false) {
     global capsShowDuration, enableCapsTip, showIMEStatus
-    static lastIMEState := "英"
+    static lastIMEState := ""
+    static isInitialized := false
 
     if (!enableCapsTip)
         return
+
+    ; 首次调用时获取实际 IME 状态
+    if (!isInitialized && showIMEStatus) {
+        lastIMEState := GetIMEStatus(true)
+        isInitialized := true
+    }
 
     ; 获取大小写状态
     caps := GetKeyState("CapsLock", "T")
@@ -553,10 +588,11 @@ ShowCapsStatus(forceRefreshIME := false, toggleMode := false) {
             ime := lastIMEState
         } else {
             ime := GetIMEStatus(forceRefreshIME)
-            lastIMEState := ime
+            if (ime != "")
+                lastIMEState := ime
         }
         ; 合并显示
-        tip := capsIcon . " | " . ime
+        tip := capsIcon . " | " . (lastIMEState != "" ? lastIMEState : "英")
     } else {
         ; 只显示大小写
         tip := capsIcon
@@ -571,14 +607,24 @@ ShowCapsStatus(forceRefreshIME := false, toggleMode := false) {
 GetIMEStatus(forceRefresh := false) {
     static lastResult := "英"
     static lastCheckTime := 0
+    static lastWindowHash := 0
 
     ; 防抖：150ms 内直接返回上次结果
     if (!forceRefresh && A_TickCount - lastCheckTime < 150)
         return lastResult
 
     currentResult := ""
-
+    currentWindowHash := 0
+    
     try {
+        hWnd := WinExist("A")
+        if (hWnd) {
+            currentWindowHash := hWnd
+            if (!forceRefresh && currentWindowHash = lastWindowHash) {
+                return lastResult
+            }
+        }
+        
         currentResult := DetectIMEViaKeyboardLayout()
         if (currentResult = "") {
             currentResult := DetectIMEViaIMM32()
@@ -586,8 +632,10 @@ GetIMEStatus(forceRefresh := false) {
     } catch {
     }
 
-    if (currentResult != "")
+    if (currentResult != "") {
         lastResult := currentResult
+        lastWindowHash := currentWindowHash
+    }
 
     lastCheckTime := A_TickCount
     return lastResult
@@ -666,39 +714,55 @@ DetectIMEViaIMM32() {
 ; ============================================================
 ClipChanged(dataType) {
     global copyShowDuration, enableCopyTip
-    global lastClipboardContent, lastClipboardTime
+    global lastClipboardContent, lastClipboardTime, clipboardProcessing
+    
     if (!enableCopyTip)
         return
-
-    ; 防抖
-    if (A_TickCount - lastClipboardTime < 100)
+    
+    if (clipboardProcessing)
         return
-
-    currentContent := A_Clipboard
-    if (currentContent = lastClipboardContent)
-        return
-
-    lastClipboardContent := currentContent
-    lastClipboardTime := A_TickCount
-
-    isFile := DllCall("IsClipboardFormatAvailable", "UInt", 15)
-    isImage := DllCall("IsClipboardFormatAvailable", "UInt", 2)
-          || DllCall("IsClipboardFormatAvailable", "UInt", 8)
-          || DllCall("IsClipboardFormatAvailable", "UInt", 17)
-
-    if (isFile) {
-        files := StrSplit(A_Clipboard, "`n", "`r")
-        count := files.Length
-        ShowTip("已复制：" . count . " 个文件", copyShowDuration)
-    }
-    else if (isImage) {
-        ShowTip("已复制：图片", copyShowDuration)
-    }
-    else if (dataType = 1 || dataType = 2) {
-        text := A_Clipboard
-        length := StrLen(text)
-        if (length > 0) {
-            ShowTip("已复制：" . length . " 字符", copyShowDuration)
+    
+    clipboardProcessing := true
+    
+    try {
+        ; 防抖
+        if (A_TickCount - lastClipboardTime < 100) {
+            clipboardProcessing := false
+            return
         }
+
+        currentContent := A_Clipboard
+        if (currentContent = lastClipboardContent) {
+            clipboardProcessing := false
+            return
+        }
+
+        lastClipboardContent := currentContent
+        lastClipboardTime := A_TickCount
+
+        isFile := DllCall("IsClipboardFormatAvailable", "UInt", 15)
+        isImage := DllCall("IsClipboardFormatAvailable", "UInt", 2)
+              || DllCall("IsClipboardFormatAvailable", "UInt", 8)
+              || DllCall("IsClipboardFormatAvailable", "UInt", 17)
+
+        if (isFile) {
+            files := StrSplit(A_Clipboard, "`n", "`r")
+            count := files.Length
+            if (count > 0 && files[1] != "")
+                ShowTip("已复制：" . count . " 个文件", copyShowDuration)
+        }
+        else if (isImage) {
+            ShowTip("已复制：图片", copyShowDuration)
+        }
+        else if (dataType = 1 || dataType = 2) {
+            text := A_Clipboard
+            length := StrLen(text)
+            if (length > 0) {
+                ShowTip("已复制：" . length . " 字符", copyShowDuration)
+            }
+        }
+    }
+    finally {
+        clipboardProcessing := false
     }
 }
