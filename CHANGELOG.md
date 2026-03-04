@@ -2,7 +2,22 @@
 
 All notable changes to CapsCopyTip will be documented in this file.
 
-## [1.4.0] - 2026-03-04
+> **版本规范**：采用二十进制版本号，每次发布只递增 PATCH 位（第三位），PATCH 到 19 进位到 MINOR
+
+## [1.0.10] - 2026-03-04
+
+### Changed
+- 🖼️ 升级为二十进制版本规范
+
+## [1.0.9] - 2026-03-04
+
+### Changed
+- 🖼️ 微调设置窗口底部控件位置
+- 🖼️ 简化提示位置布局
+- 🖼️ 为功能开关添加图标
+- 🖼️ 对齐设置窗口标题与控件
+
+## [1.0.8] - 2026-03-04
 
 ### Added
 - ✨ 引入 DefaultConfig 统一管理默认配置
@@ -12,17 +27,18 @@ All notable changes to CapsCopyTip will be documented in this file.
 - 🖼️ 优化设置窗口布局和功能开关排列
 - 🖼️ 添加 GitHub 图标和版权信息
 - ♻️ 优化代码注释
+- ⚡ 优化 IME 检测和剪贴板处理性能
 
 ### Fixed
 - 🐛 修复 IME 中/英文检测逻辑
+- 🐛 彻底修复设置窗口内存泄漏问题
 
-## [1.3.1] - 2026-03-03
+## [1.0.7] - 2026-03-03
 
 ### Fixed
 - 🐛 彻底修复设置窗口内存泄漏问题
-- ⚡ 优化 IME 检测和剪贴板处理性能
 
-## [1.3.0] - 2026-03-03
+## [1.0.6] - 2026-03-03
 
 ### Added
 - ✨ 内置 CaretIndicator 光标指示器（替换外部 exe）
@@ -37,13 +53,13 @@ All notable changes to CapsCopyTip will be documented in this file.
 ### Fixed
 - 🐛 使用正确的 Stop() 方法停止光标指示器
 
-## [1.2.1] - 2026-03-02
+## [1.0.5] - 2026-03-02
 
 ### Fixed
 - 🐛 添加剪贴板防抖机制，修复重复显示
 - 🐛 修正输入法中英文显示状态反转
 
-## [1.2.0] - 2026-03-02
+## [1.0.4] - 2026-03-02
 
 ### Added
 - ✨ 添加浅色模式支持
@@ -58,19 +74,24 @@ All notable changes to CapsCopyTip will be documented in this file.
 - ⚡ 优化输入法检测逻辑，适配 Windows 11 微软拼音
 - ⚡ 优化 Shift 切换响应速度
 - 🖼️ 优化大小写提示显示格式
+- 🏷️ 项目重命名为 CapsCopyTip
 
-## [1.1.0] - 2026-03-02
-
-### Added
-- ✨ 添加托盘菜单（设置、重启、退出）
-- ✨ 添加设置窗口（功能开关、显示时长、提示位置、字体样式）
-- ✨ 添加配置文件持久化（config.ini）
-- 🖥️ 添加开机启动功能
+## [1.0.3] - 2026-03-02
 
 ### Changed
-- 🏷️ 项目重命名为 CapsCopyTip（原 AllInOneNotification）
+- 🏷️ 项目重命名为 CapsCopyTip
+
+## [1.0.2] - 2026-03-01
+
+### Added
+- ✨ 配置文件持久化（config.ini）
+- 🖥️ 添加开机启动功能
 
 ## [1.0.1] - 2026-03-01
+
+### Added
+- ✨ 托盘菜单（设置、重启、退出）
+- ✨ 设置窗口（功能开关、显示时长、提示位置、字体样式）
 
 ### Fixed
 - 🐛 修复提示窗口闪烁问题

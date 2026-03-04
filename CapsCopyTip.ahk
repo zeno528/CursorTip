@@ -1,5 +1,5 @@
 ; ============================================================
-; CapsCopyTip v1.4.0 (AutoHotkey v2)
+; CapsCopyTip v1.0.10 (AutoHotkey v2)
 ; 功能：合并大小写提示 + 复制提示 + 光标语言标记
 ; - 大小写/输入法：🔒 大写 | 中 / 🔓 小写 | 英
 ; - 复制提示：显示复制的字符数/图片/文件数
@@ -48,7 +48,7 @@ global DefaultConfig := {
 ; ============================================================
 ; 全局变量（从 DefaultConfig 初始化）
 ; ============================================================
-global VERSION := "1.4.0"
+global VERSION := "1.0.10"
 global capsShowDuration := DefaultConfig.capsShowDuration
 global copyShowDuration := DefaultConfig.copyShowDuration
 global lastCapsState := GetKeyState("CapsLock", "T")

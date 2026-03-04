@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 
 echo ========================================
-echo   CapsCopyTip v1.2.0 - Compile Script
+echo   CapsCopyTip v1.0.10 - Compile Script
 echo ========================================
 echo.
 
@@ -55,7 +55,7 @@ echo.
 echo [2/2] Compiling CapsCopyTip...
 echo.
 
-set "CT_Source=%ScriptDir%CapsCopyTip_v1.2.0.ahk"
+set "CT_Source=%ScriptDir%CapsCopyTip.ahk"
 set "CT_Output=%ScriptDir%CapsCopyTip.exe"
 
 if not exist "%CT_Source%" (
