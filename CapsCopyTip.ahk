@@ -380,9 +380,9 @@ ShowSettings(*) {
     settingsGui.Add("Text", "x10 y475 w320 h1 BackgroundDDDDDD")
 
     ; === 按钮 ===
-    settingsGui.Add("Button", "x25 y490 w80", "恢复默认").OnEvent("Click", Settings_ResetDefaults)
-    settingsGui.Add("Button", "x125 y490 w80 Default", "保存").OnEvent("Click", Settings_SaveAndClose)
-    settingsGui.Add("Button", "x225 y490 w80", "取消").OnEvent("Click", Settings_CancelAndClose)
+    settingsGui.Add("Button", "x20 y490 w80", "恢复默认").OnEvent("Click", Settings_ResetDefaults)
+    settingsGui.Add("Button", "x130 y490 w80 Default", "保存").OnEvent("Click", Settings_SaveAndClose)
+    settingsGui.Add("Button", "x240 y490 w80", "取消").OnEvent("Click", Settings_CancelAndClose)
 
     ; 窗口关闭时清理（点击 X 关闭）
     settingsGui.OnEvent("Close", Settings_CancelAndClose)
@@ -392,7 +392,7 @@ ShowSettings(*) {
     pic.OnEvent("Click", OpenGitHub)
     settingsGui.SetFont("s8", "Microsoft YaHei")
     settingsGui.Add("Link", "x40 y535", '<a href="https://github.com/Ekko7778/AllInOneNotification">GitHub</a>')
-    settingsGui.Add("Text", "x120 y535", "© 2026 作者 Ekko7778 - MIT License")
+    settingsGui.Add("Text", "x140 y535", "© 2026 作者 Ekko7778 - MIT License")
 
     settingsGui.Show("w340 h568")
 }
