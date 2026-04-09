@@ -1,17 +1,13 @@
 ; ============================================================
 ; CapsCopyTip v2.0.0 (AutoHotkey v2)
-; 功能：大小写提示 + 复制提示 + 光标语言标记
+; 功能：大小写提示 + 复制提示
 ; - 大小写/输入法：🔒 大写 | 中 / 🔓 小写 | 英
 ; - 复制提示：显示复制的字符数/图片/文件数
-; - 光标标记：在文本光标旁显示语言状态
 ; - 右键托盘图标可打开设置
 ; ============================================================
 
 #SingleInstance Force
 Persistent
-
-#include lib\CaretIndicator.ahk
-#include lib\utils\Merge.ahk
 
 ; ============================================================
 ; 版本
@@ -28,7 +24,6 @@ class Config {
     static Defaults := {
         enableCapsTip: true,
         enableCopyTip: true,
-        enableCaretIndicator: true,
         showIMEStatus: true,
         capsShowDuration: 800,
         copyShowDuration: 800,
@@ -44,7 +39,6 @@ class Config {
     ; 每个配置项声明为独立的静态属性（带默认值）
     static enableCapsTip := true
     static enableCopyTip := true
-    static enableCaretIndicator := true
     static showIMEStatus := true
     static capsShowDuration := 800
     static copyShowDuration := 800
@@ -65,7 +59,6 @@ class Config {
             c := Config
             c.enableCapsTip := IniRead(Config.Path, "Settings", "EnableCapsTip", 1) = 1
             c.enableCopyTip := IniRead(Config.Path, "Settings", "EnableCopyTip", 1) = 1
-            c.enableCaretIndicator := IniRead(Config.Path, "Settings", "EnableCaretIndicator", 1) = 1
             c.showIMEStatus := IniRead(Config.Path, "Settings", "ShowIMEStatus", 1) = 1
 
             c.capsShowDuration := Integer(IniRead(Config.Path, "Settings", "CapsShowDuration", 800))
@@ -90,7 +83,6 @@ class Config {
             c := Config
             IniWrite(c.enableCapsTip ? 1 : 0, Config.Path, "Settings", "EnableCapsTip")
             IniWrite(c.enableCopyTip ? 1 : 0, Config.Path, "Settings", "EnableCopyTip")
-            IniWrite(c.enableCaretIndicator ? 1 : 0, Config.Path, "Settings", "EnableCaretIndicator")
             IniWrite(c.showIMEStatus ? 1 : 0, Config.Path, "Settings", "ShowIMEStatus")
 
             IniWrite(c.capsShowDuration, Config.Path, "Settings", "CapsShowDuration")
@@ -124,7 +116,6 @@ global lastCapsChangeTime := 0
 global lastClipboardContent := ""
 global lastClipboardTime := 0
 global clipboardProcessing := false
-global caretIndicatorInst := ""
 global tipGui := ""
 global tipGuiText := ""
 global settingsGui := ""
@@ -158,7 +149,6 @@ OnExit(OnScriptExit)
 ; ============================================================
 Config.Load()
 InitMonitors()
-ShowTip("CapsCopyTip v" . VERSION, 1000)
 
 return ; 自动执行段结束
 
@@ -166,7 +156,7 @@ return ; 自动执行段结束
 ; 退出清理
 ; ============================================================
 OnScriptExit(exitReason, exitCode) {
-    global tipGui, settingsGui, caretIndicatorInst
+    global tipGui, settingsGui
     SetTimer(CheckCapsLock, 0)
     SetTimer(HideTip, 0)
 
@@ -178,17 +168,12 @@ OnScriptExit(exitReason, exitCode) {
         settingsGui.Destroy()
         settingsGui := ""
     }
-    if (IsObject(caretIndicatorInst)) {
-        caretIndicatorInst.Stop()
-        caretIndicatorInst := ""
-    }
 }
 
 ; ============================================================
 ; 注册/取消监听
 ; ============================================================
 InitMonitors() {
-    global caretIndicatorInst
     c := Config
 
     ; 大小写监听
@@ -198,18 +183,10 @@ InitMonitors() {
     ; 复制监听
     if (c.enableCopyTip)
         OnClipboardChange(ClipChanged)
-
-    ; 光标指示器
-    if (c.enableCaretIndicator) {
-        caretIndicatorInst := CaretIndicator(merge(CaretIndicator.DefaultConfig, {
-            markMargin: { x: 1, y: -1 }
-        }))
-        caretIndicatorInst.Run()
-    }
 }
 
 ApplySettings() {
-    global caretIndicatorInst, tipGui, tipGuiText
+    global tipGui, tipGuiText
     c := Config
 
     ; 大小写监听
@@ -221,21 +198,6 @@ ApplySettings() {
     OnClipboardChange(ClipChanged, 0)
     if (c.enableCopyTip)
         OnClipboardChange(ClipChanged)
-
-    ; 光标指示器
-    if (c.enableCaretIndicator) {
-        if (!IsObject(caretIndicatorInst)) {
-            caretIndicatorInst := CaretIndicator(merge(CaretIndicator.DefaultConfig, {
-                markMargin: { x: 1, y: -1 }
-            }))
-            caretIndicatorInst.Run()
-        }
-    } else {
-        if (IsObject(caretIndicatorInst)) {
-            caretIndicatorInst.Stop()
-            caretIndicatorInst := ""
-        }
-    }
 
     ; 销毁提示窗口以应用新外观
     if (IsObject(tipGui)) {
@@ -283,7 +245,7 @@ ShowTip(text, duration := 0) {
 
     ; 快速路径：GUI 已存在且有效，直接更新文本
     if (IsObject(tipGui) && WinExist("ahk_id " . tipGui.Hwnd) && IsObject(tipGuiText)) {
-        tipGuiText.Value := " " . text . " "
+        tipGuiText.Value := text
 
         ; 重新计算位置（文本长度变化时窗口需要自适应）
         SendMessage(0xB, 0, 0, , "ahk_id " . tipGui.Hwnd)  ; 禁用重绘
@@ -321,7 +283,7 @@ ShowTip(text, duration := 0) {
             textColor := "FFFFFF"
         }
         tipGui.SetFont("s" . c.tipFontSize . (c.tipFontBold ? " Bold" : ""), "Microsoft YaHei")
-        tipGuiText := tipGui.Add("Text", "c" . textColor . " Center r1", " " . text . " ")
+        tipGuiText := tipGui.Add("Text", "c" . textColor . " Center r1", text)
 
         ; Windows 11 圆角
         try {
@@ -605,8 +567,6 @@ ShowSettings(*) {
 
     g.ctl_copy := g.Add("CheckBox", "x20 y82 w130", "📋 复制提示")
     g.ctl_copy.Value := c.enableCopyTip
-    g.ctl_caret := g.Add("CheckBox", "x200 y82 w140", "🎯 光标指示器")
-    g.ctl_caret.Value := c.enableCaretIndicator
 
     g.ctl_caps.OnEvent("Click", (ctrl, *) => ctrl.Gui.ctl_ime.Enabled := ctrl.Value)
 
@@ -693,7 +653,6 @@ SettingsReset(ctrl, *) {
     g.ctl_ime.Value := d.showIMEStatus
     g.ctl_ime.Enabled := d.enableCapsTip
     g.ctl_copy.Value := d.enableCopyTip
-    g.ctl_caret.Value := d.enableCaretIndicator
 
     g.ctl_capsDur.Value := d.capsShowDuration
     g.ctl_copyDur.Value := d.copyShowDuration
@@ -719,7 +678,6 @@ SettingsSave(ctrl, *) {
     ; 读取 GUI 值
     c.enableCapsTip := g.ctl_caps.Value
     c.enableCopyTip := g.ctl_copy.Value
-    c.enableCaretIndicator := g.ctl_caret.Value
     c.showIMEStatus := g.ctl_ime.Value
 
     SetStartup(g.ctl_startup.Value)
