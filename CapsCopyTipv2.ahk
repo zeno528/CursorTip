@@ -12,7 +12,7 @@ Persistent
 ; ============================================================
 ; 版本
 ; ============================================================
-global VERSION := "2.0.2"
+global VERSION := "2.0.3"
 
 ; ============================================================
 ; 配置管理类 — 统一管理所有配置项
@@ -113,7 +113,7 @@ class Config {
 ; ============================================================
 global lastCapsState := GetKeyState("CapsLock", "T")
 global lastCapsChangeTime := 0
-global lastClipboardContent := ""
+global lastClipboardFingerprint := ""
 global lastClipboardTime := 0
 global clipboardProcessing := false
 global shiftAlone := false
@@ -601,7 +601,7 @@ ShowCapsStatus(forceRefreshIME := false) {
 ; 剪贴板监听
 ; ============================================================
 ClipChanged(dataType) {
-    global clipboardProcessing, lastClipboardContent, lastClipboardTime
+    global clipboardProcessing, lastClipboardFingerprint, lastClipboardTime
     if (!Config.enableCopyTip || clipboardProcessing)
         return
 
@@ -613,13 +613,14 @@ ClipChanged(dataType) {
             return
         }
 
-        currentContent := A_Clipboard
-        if (currentContent = lastClipboardContent) {
+        ; 用长度+前缀摘要去重，避免保留剪贴板全文导致内存占用
+        fingerprint := StrLen(A_Clipboard) . "|" . SubStr(A_Clipboard, 1, 200)
+        if (fingerprint = lastClipboardFingerprint) {
             clipboardProcessing := false
             return
         }
 
-        lastClipboardContent := currentContent
+        lastClipboardFingerprint := fingerprint
         lastClipboardTime := A_TickCount
 
         isFile := DllCall("IsClipboardFormatAvailable", "UInt", 15)
