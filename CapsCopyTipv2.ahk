@@ -12,7 +12,7 @@ Persistent
 ; ============================================================
 ; 版本
 ; ============================================================
-global VERSION := "2.0.1"
+global VERSION := "2.0.2"
 
 ; ============================================================
 ; 配置管理类 — 统一管理所有配置项
@@ -748,7 +748,7 @@ ShowSettings(*) {
     pic.OnEvent("Click", (*) => Run("https://github.com/Ekko7778/AllInOneNotification"))
     g.SetFont("s8", "Microsoft YaHei")
     g.Add("Link", "x40 y502", '<a href="https://github.com/Ekko7778/CapsCopyTip">GitHub</a>')
-    g.Add("Text", "x140 y502", "© 2026 Ekko7778 - MIT License")
+    g.Add("Text", "x200 y502", "© 2026  MIT License")
 
     g.Show("w340 h530")
     settingsGui := g
