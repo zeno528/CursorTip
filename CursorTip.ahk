@@ -116,7 +116,8 @@ global lastCapsChangeTime := 0
 global lastClipboardFingerprint := ""
 global lastClipboardTime := 0
 global clipboardProcessing := false
-global shiftAlone := false
+global shiftDownTime := 0
+global ctrlShiftActive := false
 global tipGui := ""
 global tipGuiText := ""
 global settingsGui := ""
@@ -348,6 +349,7 @@ GetIMEStatus(forceRefresh := false) {
     static lastResult := "中"
     static lastCheckTime := 0
     static lastWindowHash := 0
+    static lastKLID := 0
 
     if (!forceRefresh) {
         if (A_TickCount - lastCheckTime < 150)
@@ -355,6 +357,17 @@ GetIMEStatus(forceRefresh := false) {
         hWnd := WinExist("A")
         if (hWnd && hWnd = lastWindowHash)
             return lastResult
+    }
+
+    ; 键盘布局变化说明切换了输入法，重置为中文
+    try {
+        threadID := DllCall("GetWindowThreadProcessId", "Ptr", WinExist("A"), "UInt", 0)
+        hKL := DllCall("GetKeyboardLayout", "UInt", threadID, "UPtr")
+        if (lastKLID != 0 && hKL != lastKLID) {
+            trackedIMEState := "中"
+            lastCheckTime := 0  ; 清除防抖，让后续调用立即生效
+        }
+        lastKLID := hKL
     }
 
     lastResult := trackedIMEState
@@ -398,21 +411,25 @@ ShowCapsStatus(forceRefreshIME := false) {
     ShowTip(tip, Config.capsShowDuration)
 }
 
-; Shift 独立按下检测：只有单独按下并释放 Shift 才触发
+; Shift 独立按下检测：用时间戳判断期间是否有其他键按下
 ~*LShift::
 ~*RShift:: {
-    global shiftAlone := true
+    global shiftDownTime
+    shiftDownTime := A_TickCount
 }
 
 ~*LShift up::
 ~*RShift up:: {
-    global lastCapsChangeTime, shiftAlone, trackedIMEState
+    global lastCapsChangeTime, trackedIMEState, ctrlShiftActive
     if (!Config.enableCapsTip)
         return
 
-    ; 如果 Shift 不是独立按下（有其他键同时被按），不触发
-    if (!shiftAlone)
+    ; Ctrl+Shift 切换输入法，重置为中文不翻转
+    if (ctrlShiftActive) {
+        ctrlShiftActive := false
+        trackedIMEState := "中"
         return
+    }
 
     ; 释放时仍有其他修饰键按住 → 组合键，不触发
     if (GetKeyState("Ctrl", "P") || GetKeyState("Alt", "P") || GetKeyState("LWin", "P") || GetKeyState("RWin", "P"))
@@ -449,6 +466,14 @@ ShowCapsStatus(forceRefreshIME := false) {
 ~#Space:: {
     global trackedIMEState
     trackedIMEState := "中"
+}
+
+; Ctrl+Shift 切换输入法时重置为中文（不显示提示）
+; Ctrl+Shift 切换输入法时标记
+~^LShift::
+~^RShift:: {
+    global ctrlShiftActive
+    ctrlShiftActive := true
 }
 
 ; 任意其他键按下 → 标记 Shift 不是独立按下
@@ -536,20 +561,6 @@ ShowCapsStatus(forceRefreshIME := false) {
 ~*NumpadDot::
 ~*`::
 ~*-::
-~*=::
-~*[::
-~*]::
-~*\::
-~*;::
-~*'::
-~*,::
-~*.::
-~*/::
-~*LButton up::
-~*RButton up::
-~*MButton up:: {
-    global shiftAlone := false
-}
 
 ; ============================================================
 ; 剪贴板监听
