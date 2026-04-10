@@ -12,7 +12,7 @@ Persistent
 ; ============================================================
 ; 版本
 ; ============================================================
-global VERSION := "2.0.2"
+global VERSION := "2.0.3"
 
 ; ============================================================
 ; 配置管理类 — 统一管理所有配置项
@@ -745,7 +745,9 @@ ShowSettings(*) {
     g.OnEvent("Close", SettingsClose)
 
     ; 底部信息
-    pic := g.Add("Picture", "x20 y500 w16 h16", "assets/github.ico")
+    icoPath := A_Temp . "\CursorTip_github.ico"
+    FileInstall("assets\github.ico", icoPath, 1)
+    pic := g.Add("Picture", "x20 y500 w16 h16", icoPath)
     pic.OnEvent("Click", (*) => Run("https://github.com/zeno528/CapsCopyTip"))
     g.SetFont("s8", "Microsoft YaHei")
     g.Add("Link", "x40 y502", '<a href="https://github.com/zeno528/CapsCopyTip">GitHub</a>')  ; 仓库名暂不改
