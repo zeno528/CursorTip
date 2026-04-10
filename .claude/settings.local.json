@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "mcp__github__get_release_by_tag",
-      "mcp__github__list_commits"
+      "mcp__github__list_commits",
+      "mcp__github__get_me",
+      "mcp__github__search_repositories",
+      "mcp__github__list_releases"
     ]
   }
 }

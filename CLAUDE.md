@@ -80,17 +80,25 @@ v1.19.19 → v2.0.0
 
 ## 开发笔记
 
-### SendMessage 权限问题
+### UWP 应用 IME 检测
 
-访问某些窗口的 IME 状态时会报"拒绝访问"，需要 try-catch 保护：
+`ImmGetContext` 不支持跨进程调用，UWP 应用（`ApplicationFrameWindow`）的 IME 上下文无法从外部进程获取。
 
-```autohotkey
-try {
-    result := SendMessage(0x283, 0x005, 0, , "ahk_id " . hIMEWnd)
-} catch {
-    return "?"
-}
-```
+**三种 API 在 UWP 中的表现**：
+- `ImmGetConversionStatus`：跨进程返回 0（hIMC 为空）
+- `ImmGetDefaultIMEWnd + SendMessage(IMC_GETCONVERSIONMODE)`：Windows 11 新版微软拼音下 `convMode` 始终为 1，不反映中/英切换
+- `GetKeyboardLayout`：只检测键盘布局语言（LANGID），不检测 IME 中/英模式
+
+**解决方案**：Shift 键模式追踪
+- 脚本启动时通过 `ImmGetConversionStatus` 获取初始 IME 状态
+- 每次独立按下 Shift 时翻转 `trackedIMEState`（中→英，英→中）
+- `CheckCapsLock` 定时器中 `ImmGetConversionStatus` 可正常工作（同线程），直接用 API 结果
+- 当 API 不可用时（Shift 钩子中跨线程），使用 `trackedIMEState`
+
+**关键坑点**：
+1. `ImmGetContext` 在 AHK 热键线程中返回 0（非目标窗口线程），只有定时器回调中可用
+2. AHK 的 `SendMessage` 用 `"ahk_id"` 格式找不到隐藏 IME 窗口，必须用 `DllCall("SendMessage", "Ptr", hIMEWnd, ...)`
+3. `trackedIMEState` 初始值不能硬编码，必须启动时通过 API 检测，否则翻转方向会反转
 
 ### GUI 输入框验证时机
 

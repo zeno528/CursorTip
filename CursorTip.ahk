@@ -12,7 +12,7 @@ Persistent
 ; ============================================================
 ; 版本
 ; ============================================================
-global VERSION := "2.0.3"
+global VERSION := "2.0.4"
 
 ; ============================================================
 ; 配置管理类 — 统一管理所有配置项
@@ -120,6 +120,7 @@ global shiftAlone := false
 global tipGui := ""
 global tipGuiText := ""
 global settingsGui := ""
+global trackedIMEState := ""  ; IME 模式追踪，启动时通过 API 初始化
 
 ; ============================================================
 ; 托盘菜单
@@ -149,6 +150,7 @@ OnExit(OnScriptExit)
 ; 启动
 ; ============================================================
 Config.Load()
+InitTrackedIMEState()
 InitMonitors()
 
 return ; 自动执行段结束
@@ -169,6 +171,24 @@ OnScriptExit(exitReason, exitCode) {
         settingsGui.Destroy()
         settingsGui := ""
     }
+}
+
+; 初始化 IME 追踪状态（启动时通过 API 检测一次真实值）
+InitTrackedIMEState() {
+    global trackedIMEState
+    try {
+        hWnd := WinExist("A")
+        if (hWnd) {
+            hIMC := DllCall("imm32\ImmGetContext", "Ptr", hWnd, "UPtr")
+            if (hIMC) {
+                DllCall("imm32\ImmGetConversionStatus", "Ptr", hIMC, "UInt*", &fdwConversion := 0, "UInt*", &fdwSentence := 0, "Int")
+                DllCall("imm32\ImmReleaseContext", "Ptr", hWnd, "UPtr", hIMC)
+                trackedIMEState := (fdwConversion & 1) ? "中" : "英"
+            }
+        }
+    }
+    if (trackedIMEState = "")
+        trackedIMEState := "中"
 }
 
 ; ============================================================
@@ -331,9 +351,13 @@ HideTip() {
 }
 
 ; ============================================================
-; 输入法检测 — 统一使用 ImmGetConversionStatus
+; 输入法检测
+; 检测链路：ImmGetConversionStatus → ImmGetDefaultIMEWnd+SendMessage → 模式追踪
+; UWP 应用 (ApplicationFrameWindow) 因跨进程限制，前两种 API 均不可用
+; 第三层通过监听 Shift 键追踪 IME 中/英切换来推断状态
 ; ============================================================
 GetIMEStatus(forceRefresh := false) {
+    global trackedIMEState
     static lastResult := "英"
     static lastCheckTime := 0
     static lastWindowHash := 0
@@ -354,16 +378,17 @@ GetIMEStatus(forceRefresh := false) {
         if (!hWnd)
             throw Error()
 
-        ; 方法1: ImmGetConversionStatus（最可靠，标准 IME 接口）
+        ; 只用 ImmGetConversionStatus（在目标窗口同线程中调用才可靠）
         result := DetectIMEViaConversionStatus(hWnd)
-
-        ; 方法2: 回退到 ImmGetDefaultIMEWnd + SendMessage
-        if (result = "")
-            result := DetectIMEViaMessage(hWnd)
     } catch {
     }
 
     if (result != "") {
+        lastResult := result
+        lastWindowHash := WinExist("A")
+    } else {
+        ; API 不可用时，使用 Shift 追踪的状态
+        result := trackedIMEState
         lastResult := result
         lastWindowHash := WinExist("A")
     }
@@ -411,25 +436,6 @@ DetectIMEViaConversionStatus(hWnd) {
     }
 }
 
-; 通过 IMM32 窗口消息检测（回退方案）
-; 使用 IMC_GETOPENSTATUS (0x005)：返回 1 = IME 打开 = 中文模式
-DetectIMEViaMessage(hWnd) {
-    saved := A_DetectHiddenWindows
-    try {
-        DetectHiddenWindows(true)
-        hIMEWnd := DllCall("imm32\ImmGetDefaultIMEWnd", "UInt", hWnd, "UInt")
-        if (hIMEWnd) {
-            result := SendMessage(0x283, 0x005, 0, , "ahk_id " . hIMEWnd)
-            DetectHiddenWindows(saved)
-            return result ? "中" : "英"
-        }
-        DetectHiddenWindows(saved)
-    } catch {
-        DetectHiddenWindows(saved)
-    }
-    return ""
-}
-
 ; ============================================================
 ; 大小写监听
 ; ============================================================
@@ -473,7 +479,7 @@ ShowCapsStatus(forceRefreshIME := false) {
 
 ~*LShift up::
 ~*RShift up:: {
-    global lastCapsChangeTime, shiftAlone
+    global lastCapsChangeTime, shiftAlone, trackedIMEState
     if (!Config.enableCapsTip)
         return
 
@@ -494,6 +500,13 @@ ShowCapsStatus(forceRefreshIME := false) {
         return
 
     Sleep(30)
+
+    ; 所有应用统一使用 Shift 追踪方案
+    ; 因为 ImmGetContext 在 AHK 线程中返回 0，IMC_GETCONVERSIONMODE 不反映中英切换
+    trackedIMEState := (trackedIMEState = "中") ? "英" : "中"
+
+    ShowCapsStatus(true)
+
     ShowCapsStatus(true)
 }
 
