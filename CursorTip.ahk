@@ -342,11 +342,9 @@ ShowTip(text, duration := 0) {
 }
 
 HideTip() {
-    global tipGui, tipGuiText
-    if (IsObject(tipGui)) {
-        tipGui.Destroy()
-        tipGui := ""
-        tipGuiText := ""
+    global tipGui
+    if (IsObject(tipGui) && WinExist("ahk_id " . tipGui.Hwnd)) {
+        tipGui.Hide()
     }
     SetTimer(HideTip, 0)
 }
