@@ -3,7 +3,8 @@
 # 流程：bump VERSION.ahk → push main → build-release (windows, 编译 + Draft)
 #   tag = vX.Y.Z 由 VERSION.ahk 推导（单一真源，CursorTip.ahk #Include 它，exe 内版本同源），
 #   --target 钉死在本次构建的 SHA，不存在 tag/版本号错位的可能
-# Draft 模式下生成的 Release 需 AI 后续编辑（artifact 下载草稿 → 填充本次更新段 → gh release edit publish）。
+# Draft 模式下更新日志由「生成 Release body」步骤自动从 git history 提取（上个 tag..HEAD、
+# 只看 CursorTip.ahk、按 commit 前缀分类），AI 无需手写：gh release view 审阅 → gh release edit --draft=false 发布。
 # 注意：tag 已存在时 gh 会报错；想重发同版本需先删 Release + tag。
 name: Release
 
@@ -27,8 +28,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
+      # fetch-depth: 0 = 完整历史 + 全部 tag：更新日志要 git describe 上个 tag、git log 提取 commit
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: 读取版本号（单一真源：VERSION.ahk，CursorTip.ahk #Include 它）
         shell: pwsh
@@ -91,29 +95,59 @@ jobs:
           Compress-Archive -Path "dist\CursorTip_v$env:VERSION.exe", 'LICENSE' -DestinationPath "dist\CursorTip_v$env:VERSION.zip" -Force
           "打包完成: dist\CursorTip_v$env:VERSION.zip"
 
-      # Release body 草稿：固定模板（下载与使用 + 拦截提示）+ AI 填充位（本次更新）
-      # AI 流程：Actions run 页面下载 release-draft artifact → 填充 AI-FILL 段 → gh release edit publish
-      - name: 生成 Release body 草稿
+      # 更新日志自动生成：上个 tag..HEAD，只取改过 CursorTip.ahk 的 commit，按常规提交前缀分类
+      # （feat→✨ / fix→🐞 / 其余→🚀；docs/test/ci 不列），subject 尾巴上的版本号 bump 剔除。
+      # 分类规则与本地 skill（cursortip-build Step R2）一致，Draft body 即成品，审阅后直接 publish
+      - name: 生成 Release body（更新日志从 git history 自动提取）
         shell: pwsh
         run: |
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8   # git 输出中文 subject 不乱码
+          $lastTag = git describe --tags --abbrev=0 2>$null
+          $log = ""
+          if ($LASTEXITCODE -ne 0 -or -not $lastTag) {
+            $log = "维护性更新。`n`n"   # 无 tag 基线时降级占位，不臆造变更范围
+          } else {
+            "变更范围: $lastTag..HEAD"
+            $feat = @(); $fix = @(); $opt = @()
+            foreach ($s in (git log "$lastTag..HEAD" --pretty=%s -- CursorTip.ahk)) {
+              if (-not $s) { continue }
+              # 混在 subject 尾部的版本号 bump 不是用户可见变更（「…并更新版本号至 1.3.7」）
+              $t = ($s -replace '并?更新版本号至?\s*v?[\d.]+.*$', '').Trim()
+              # bump 独立提交 / 剔尾后只剩类型前缀的纯 bump commit，都不进更新日志
+              if (-not $t -or $t -match 'bump version to v?[\d.]+$' -or $t -match '^[a-z]+(\([^)]*\))?!?:\s*$') { continue }
+              $m = [regex]::Match($t, '(feat|fix|refactor|perf|style|chore|docs|test|ci)(?:\([^)]*\))?!?:\s*(.+)')
+              if ($m.Success) {
+                if ($m.Groups[1].Value -in @('docs', 'test', 'ci')) { continue }
+                $text = $m.Groups[2].Value.Trim()
+                switch ($m.Groups[1].Value) {
+                  'feat'  { $feat += $text }
+                  'fix'   { $fix  += $text }
+                  default { $opt  += $text }   # refactor/perf/style/chore → 优化改进
+                }
+              } else {
+                $opt += $t   # 无规范前缀的提交不丢弃，归入优化改进
+              }
+            }
+            foreach ($g in @(@('✨ 新增功能', $feat), @('🐞 修复问题', $fix), @('🚀 优化改进', $opt))) {
+              if ($g[1].Count -gt 0) {
+                $log += "### $($g[0])`n" + (($g[1] | ForEach-Object { "- $_" }) -join "`n") + "`n`n"
+              }
+            }
+            if (-not $log) { $log = "维护性更新。`n`n" }
+          }
           $draft = @"
-          <!-- AI-FILL-START -->
-          <!-- AI-FILL-END -->
+          ## 本次更新
 
+          $log
           ## 下载与使用
 
           首次使用建议下载 `CursorTip_v$env:VERSION.zip`，解压到固定目录，双击 `CursorTip_v$env:VERSION.exe` 运行即可使用。
 
           > 首次可能被 SmartScreen 拦截，点「更多信息 → 仍要运行」即可（本项目未做代码签名）。
           "@
-          Set-Content -Path 'dist\RELEASE_DRAFT.md' -Value $draft -Encoding UTF8
-          "草稿已生成: dist\RELEASE_DRAFT.md"
-
-      - name: 上传草稿为 workflow artifact（AI 下载源）
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-draft
-          path: dist\RELEASE_DRAFT.md
+          Set-Content -Path 'dist\RELEASE_BODY.md' -Value $draft -Encoding UTF8
+          "----- Release body 预览 -----"
+          Get-Content 'dist\RELEASE_BODY.md'
 
       - name: 创建 Draft Release（tag 由 VERSION 推导，指向本次构建 SHA）
         env:
@@ -121,5 +155,5 @@ jobs:
         shell: pwsh
         run: |
           $tag = "v$env:VERSION"
-          gh release create $tag --target $env:GITHUB_SHA --title "CursorTip $tag" --draft --notes-file 'dist\RELEASE_DRAFT.md' "dist\CursorTip_v$env:VERSION.exe" "dist\CursorTip_v$env:VERSION.zip"
-          "已创建 Draft Release $tag（待 AI 编辑 → publish，发布后触发 mirror-to-r2）"
+          gh release create $tag --target $env:GITHUB_SHA --title "CursorTip $tag" --draft --notes-file 'dist\RELEASE_BODY.md' "dist\CursorTip_v$env:VERSION.exe" "dist\CursorTip_v$env:VERSION.zip"
+          "已创建 Draft Release $tag（更新日志已自动生成，审阅后 publish，发布后触发 mirror-to-r2）"

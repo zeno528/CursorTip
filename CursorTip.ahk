@@ -262,6 +262,8 @@ global lastCapsState := GetKeyState("CapsLock", "T")
 global lastCapsChangeTime := 0
 global clipboardProcessing := false
 global shiftAlone := false
+global lShiftHeld := false  ; 左 Shift 物理按住中（用于滤掉长按产生的自动重复帧）
+global rShiftHeld := false  ; 右 Shift 物理按住中
 global tipGui := ""
 global tipGuiText := ""
 global settingsGui := ""
@@ -1089,19 +1091,52 @@ ShowCapsStatus(forceRefreshIME := false) {
     ShowTip(tip, Config.capsShowDuration, true)
 }
 
-; Shift 独立按下检测：只有单独按下并释放 Shift 才触发
-~*LShift::
-~*RShift:: {
-    global shiftAlone
-    ; 按下 Shift 时已有其他修饰键按住 → 组合键
-    if (GetKeyState("Ctrl", "P") || GetKeyState("Alt", "P") || GetKeyState("LWin", "P") || GetKeyState("RWin", "P"))
-        shiftAlone := false
-    else
-        shiftAlone := true
+; Shift 独立按下检测：只有「单独按下 Shift → 中途没按任何其他键/鼠标 → 松开」才弹气泡
+;
+; ⚠️ 修饰键一样会被系统「自动重复」（auto-repeat）：长按 Shift 时 ~*LShift:: 会每隔约 30ms
+;    反复触发。若不滤掉这些重复帧，它会重新执行 ArmShift()，把组合键刚置 false 的
+;    shiftAlone 又改回 true —— 于是「Shift + 任意键/鼠标」松手后照样弹气泡（历史 bug 根因）。
+;    所以用 lShiftHeld / rShiftHeld 记录物理按住状态：只认首次按下，重复帧一律忽略。
+~*LShift:: {
+    global lShiftHeld
+    ; 标志为 true 且物理上确实还按着 → 自动重复帧，忽略，绝不动 shiftAlone
+    ; （带上 GetKeyState 是为了自愈：若 up 事件被漏掉——如更新器 Suspend 期间——
+    ;   标志不会永久卡死，下次真按下仍能正常判定）
+    if (lShiftHeld && GetKeyState("LShift", "P"))
+        return
+    lShiftHeld := true
+    ArmShift()
 }
 
-~*LShift up::
+~*RShift:: {
+    global rShiftHeld
+    if (rShiftHeld && GetKeyState("RShift", "P"))
+        return
+    rShiftHeld := true
+    ArmShift()
+}
+
+; Shift 首次按下：按下瞬间已与其他修饰键同按 → 直接算组合键
+ArmShift() {
+    global shiftAlone
+    shiftAlone := !(GetKeyState("Ctrl", "P") || GetKeyState("Alt", "P")
+                 || GetKeyState("LWin", "P") || GetKeyState("RWin", "P"))
+}
+
+~*LShift up:: {
+    global lShiftHeld
+    lShiftHeld := false
+    ShiftReleased()
+}
+
 ~*RShift up:: {
+    global rShiftHeld
+    rShiftHeld := false
+    ShiftReleased()
+}
+
+; Shift 松开：仅当全程「独立按下」才显示气泡
+ShiftReleased() {
     global lastCapsChangeTime, shiftAlone
     if (!Config.enableCapsTip)
         return
@@ -1115,7 +1150,8 @@ ShowCapsStatus(forceRefreshIME := false) {
         return
 
     ; 释放时仍有鼠标键按住 → 组合键，不触发
-    if (GetKeyState("LButton", "P") || GetKeyState("RButton", "P") || GetKeyState("MButton", "P"))
+    if (GetKeyState("LButton", "P") || GetKeyState("RButton", "P") || GetKeyState("MButton", "P")
+     || GetKeyState("XButton1", "P") || GetKeyState("XButton2", "P"))
         return
 
     ; 防抖
@@ -1226,9 +1262,29 @@ ShowCapsStatus(forceRefreshIME := false) {
 ~*RAlt::
 ~*LWin::
 ~*RWin::
+~*AppsKey::
+; 鼠标滚轮（Shift+滚轮 = 横向滚动，常见组合，原列表漏了）
+~*WheelUp::
+~*WheelDown::
+~*WheelLeft::
+~*WheelRight::
+; 小键盘 NumLock 关闭时的键名别名（与 Numpad0-9/NumpadDot 是同一物理键的不同 VK）
+~*NumpadIns::
+~*NumpadEnd::
+~*NumpadDown::
+~*NumpadPgDn::
+~*NumpadLeft::
+~*NumpadClear::
+~*NumpadRight::
+~*NumpadHome::
+~*NumpadUp::
+~*NumpadPgUp::
+~*NumpadDel::
 ~*LButton up::
 ~*RButton up::
-~*MButton up:: {
+~*MButton up::
+~*XButton1 up::
+~*XButton2 up:: {
     global shiftAlone := false
 }
 
