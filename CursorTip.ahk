@@ -1761,7 +1761,11 @@ OnPosSegClick(ctl, *) {
 
 ; 控件圆角裁剪（SetWindowRgn；w/h 为逻辑像素，按窗口 DPI 换算物理像素）
 RoundCtrl(ctrl, w, h, r) {
-    s := DllCall("user32\GetDpiForWindow", "Ptr", ctrl.Gui.Hwnd, "UInt") / 96
+    ; GetDpiForWindow 需 Win10 1607+；更早版本只有 system DPI 无 per-monitor，A_ScreenDPI 语义等价
+    try s := DllCall("user32\GetDpiForWindow", "Ptr", ctrl.Gui.Hwnd, "UInt") / 96
+    catch {
+        s := A_ScreenDPI / 96
+    }
     rgn := DllCall("gdi32\CreateRoundRectRgn", "Int", 0, "Int", 0, "Int", Round(w * s), "Int", Round(h * s), "Int", Round(r * s), "Int", Round(r * s), "Ptr")
     DllCall("user32\SetWindowRgn", "Ptr", ctrl.Hwnd, "Ptr", rgn, "Int", true)
 }
