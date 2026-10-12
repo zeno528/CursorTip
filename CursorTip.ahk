@@ -21,6 +21,9 @@ A_HotkeyInterval := 0  ; 禁用热键频率限制警告（按住 Ctrl/Win 等修
 ; ============================================================
 #Include "VERSION.ahk"
 
+; 剪贴板历史（数据层 + 面板 + 键盘处理）
+#Include "ClipboardHistory.ahk"
+
 ; ============================================================
 ; 配置管理类 — 统一管理所有配置项
 ; ============================================================
@@ -31,6 +34,13 @@ class Config {
     static Defaults := {
         enableCapsTip: true,
         enableCopyTip: true,
+        enableClipboardHistory: true,
+        clipboardHistoryMax: 50,
+        clipboardHistoryKey: "^+v",
+        clipboardHistoryW: 320,   ; 历史面板宽度；拖动/调整后自动保存
+        clipboardHistoryH: 0,     ; 历史面板高度；0 = 按条目数自适应
+        clipboardHistoryX: "",    ; 历史面板位置；"" = 跟随鼠标，用户拖移过则记住
+        clipboardHistoryY: "",
         showIMEStatus: true,
         capsShowDuration: 800,
         copyShowDuration: 800,
@@ -48,6 +58,13 @@ class Config {
     ; 每个配置项声明为独立的静态属性（带默认值）
     static enableCapsTip := true
     static enableCopyTip := true
+    static enableClipboardHistory := true
+    static clipboardHistoryMax := 50
+    static clipboardHistoryKey := "^+v"
+    static clipboardHistoryW := 320
+    static clipboardHistoryH := 0
+    static clipboardHistoryX := ""
+    static clipboardHistoryY := ""
     static showIMEStatus := true
     static capsShowDuration := 800
     static copyShowDuration := 800
@@ -70,6 +87,13 @@ class Config {
             c := Config
             c.enableCapsTip := IniRead(Config.Path, "Settings", "EnableCapsTip", 1) = 1
             c.enableCopyTip := IniRead(Config.Path, "Settings", "EnableCopyTip", 1) = 1
+            c.enableClipboardHistory := IniRead(Config.Path, "Settings", "EnableClipboardHistory", 1) = 1
+            c.clipboardHistoryMax := Max(10, Min(200, Integer(IniRead(Config.Path, "Settings", "ClipboardHistoryMax", 50))))
+            c.clipboardHistoryKey := IniRead(Config.Path, "Settings", "ClipboardHistoryKey", "^+v")
+            c.clipboardHistoryW := Max(280, Integer(IniRead(Config.Path, "Settings", "ClipboardHistoryW", 320)))
+            c.clipboardHistoryH := Max(0, Integer(IniRead(Config.Path, "Settings", "ClipboardHistoryH", 0)))
+            c.clipboardHistoryX := IniRead(Config.Path, "Settings", "ClipboardHistoryX", "")
+            c.clipboardHistoryY := IniRead(Config.Path, "Settings", "ClipboardHistoryY", "")
             c.showIMEStatus := IniRead(Config.Path, "Settings", "ShowIMEStatus", 1) = 1
 
             c.capsShowDuration := Integer(IniRead(Config.Path, "Settings", "CapsShowDuration", 800))
@@ -98,6 +122,13 @@ class Config {
             c := Config
             IniWrite(c.enableCapsTip ? 1 : 0, Config.Path, "Settings", "EnableCapsTip")
             IniWrite(c.enableCopyTip ? 1 : 0, Config.Path, "Settings", "EnableCopyTip")
+            IniWrite(c.enableClipboardHistory ? 1 : 0, Config.Path, "Settings", "EnableClipboardHistory")
+            IniWrite(c.clipboardHistoryMax, Config.Path, "Settings", "ClipboardHistoryMax")
+            IniWrite(c.clipboardHistoryKey, Config.Path, "Settings", "ClipboardHistoryKey")
+            IniWrite(c.clipboardHistoryW, Config.Path, "Settings", "ClipboardHistoryW")
+            IniWrite(c.clipboardHistoryH, Config.Path, "Settings", "ClipboardHistoryH")
+            IniWrite(c.clipboardHistoryX, Config.Path, "Settings", "ClipboardHistoryX")
+            IniWrite(c.clipboardHistoryY, Config.Path, "Settings", "ClipboardHistoryY")
             IniWrite(c.showIMEStatus ? 1 : 0, Config.Path, "Settings", "ShowIMEStatus")
 
             IniWrite(c.capsShowDuration, Config.Path, "Settings", "CapsShowDuration")
@@ -136,11 +167,18 @@ global L := Map(
         "copy_image_files", "已复制：{n} 张图片",
         "copy_image", "已复制：图片",
         "copy_chars", "已复制：{n} 字符",
+        "hist_title", "剪贴板历史　(拖动移动 · 右下角缩放)",
+        "hist_hint", "↑↓ 选择　Enter 回填　Del 删除　Esc 关闭",
+        "hist_col_text", "内容",
+        "hist_col_time", "时间",
         "set_features", "功能开关",
         "set_startup", "🚀 开机启动",
         "set_caps", "🔠 大小写提示",
         "set_ime", "🌐 显示中/英状态",
         "set_copy", "📋 复制提示",
+        "set_history", "📋 剪贴板历史",
+        "set_histmax_label", "历史条数:",
+        "set_hotkey_label", "唤出快捷键:",
         "set_duration", "显示时长",
         "set_caps_label", "大小写提示:",
         "set_copy_label", "复制提示:",
@@ -190,11 +228,18 @@ global L := Map(
         "copy_image_files", "Copied: {n} image(s)",
         "copy_image", "Copied: image",
         "copy_chars", "Copied: {n} char(s)",
+        "hist_title", "Clipboard History　(drag to move · resize at corner)",
+        "hist_hint", "↑↓ Select　Enter Fill　Del Delete　Esc Close",
+        "hist_col_text", "Text",
+        "hist_col_time", "Time",
         "set_features", "Features",
         "set_startup", "🚀 Run at startup",
         "set_caps", "🔠 CapsLock tip",
         "set_ime", "🌐 Show IME",
         "set_copy", "📋 Copy tip",
+        "set_history", "📋 Clipboard history",
+        "set_histmax_label", "Max entries:",
+        "set_hotkey_label", "Shortcut:",
         "set_duration", "Duration",
         "set_caps_label", "CapsLock tip:",
         "set_copy_label", "Copy tip:",
@@ -286,7 +331,7 @@ global UPD_API := "https://github.com/zeno528/CursorTip/releases.atom"   ; Atom 
 global UPD_DL_BASE := "https://github.com/zeno528/CursorTip/releases/download/"
 global UPD_TEMP_JSON := A_Temp . "\CursorTip_update.json"
 global UPD_TEMP_EXE := A_Temp . "\CursorTip_update.exe"
-global SETTINGS_BASE_H := 647       ; 设置窗口基础高（鼠标段2行，607 + 关于板块）；实际高由 ReflowBelow 收缩
+global SETTINGS_BASE_H := 727       ; 设置窗口基础高（鼠标段2行，607 + 关于板块 + 历史条数行40 + 快捷键行40）；实际高由 ReflowBelow 收缩
 
 
 ; ============================================================
@@ -389,6 +434,7 @@ curLang := (Config.language = "auto") ? DetectLang() : Config.language
 BuildTrayMenu()
 InitMonitors()
 MeasureTipFixedWidth()
+InitClipHistory()                   ; 剪贴板历史：读盘 + 注册 Ctrl+Shift/V 与导航键（须在 Config.Load 之后）
 
 ; 更新相关启动项（详见「自动更新」段）
 SelfHealStartupPath()                   ; exe 被改名/移动（升级换版本文件名是典型）后重写自启注册表路径
@@ -428,6 +474,12 @@ InitMonitors() {
     ; 复制监听
     if (c.enableCopyTip)
         OnClipboardChange(ClipChanged)
+
+    ; 剪贴板历史：独立回调（-1 = 排在 ClipChanged 之前），与复制提示互不依赖，
+    ; 关掉任一开关另一个照常工作。先注销防重复注册，与 ApplySettings 同款写法
+    OnClipboardChange(HistClipChanged, 0)
+    if (c.enableClipboardHistory)
+        OnClipboardChange(HistClipChanged, -1)
 }
 
 ApplySettings() {
@@ -448,6 +500,14 @@ ApplySettings() {
     OnClipboardChange(ClipChanged, 0)
     if (c.enableCopyTip)
         OnClipboardChange(ClipChanged)
+
+    ; 剪贴板历史监听（与 InitMonitors 对称）
+    OnClipboardChange(HistClipChanged, 0)
+    if (c.enableClipboardHistory)
+        OnClipboardChange(HistClipChanged, -1)
+
+    ; 历史热键（键位可改，改完必须重新注册；ApplyHistoryKey 内部会先注销旧键位）
+    ApplyHistoryKey()
 
     ; 销毁提示窗口以应用新外观（复用 DestroyTipGui，与预览共用同一销毁逻辑）
     DestroyTipGui()
@@ -1300,8 +1360,9 @@ IsImageExt(ext) {
 }
 
 ClipChanged(dataType) {
-    global clipboardProcessing
-    if (!Config.enableCopyTip || clipboardProcessing)
+    global clipboardProcessing, suppressClip
+    ; 回填历史期间（suppressClip）不弹复制提示，避免回填自己触发的气泡
+    if (suppressClip || !Config.enableCopyTip || clipboardProcessing)
         return
 
     ; 只响应文本和剪贴板更新事件，忽略其他格式避免同一次复制触发多次
@@ -1402,40 +1463,51 @@ ShowSettings(*) {
 
     g.ctl_copy := g.Add("CheckBox", "x20 y82 w130", T("set_copy"))
     g.ctl_copy.Value := c.enableCopyTip
+    g.ctl_history := g.Add("CheckBox", "x200 y82 w140", T("set_history"))
+    g.ctl_history.Value := c.enableClipboardHistory
 
     g.ctl_caps.OnEvent("Click", (ctrl, *) => ctrl.Gui.ctl_ime.Enabled := ctrl.Value)
 
+    ; === 历史条数（独占一行；行高 40 与上方复选框留足间距，贴太近会出悬停重绘伪影）===
+    g.Add("Text", "x20 y122 w110", T("set_histmax_label"))
+    ; 不挂 MakePreviewCb：拖动条数不该触发 tip 预览（同 capsDur/copyDur 的处理）
+    g.ctl_histMax := AddNumSlider(g, "histMax", 135, 119, 10, 200, c.clipboardHistoryMax, "", 10)
+
+    ; === 唤出快捷键（AHK 内置 Hotkey 控件：编辑框 + 抓键按钮，抓键逻辑不用自己实现）===
+    g.Add("Text", "x20 y162 w110", T("set_hotkey_label"))
+    g.ctl_hotkey := g.Add("Hotkey", "x135 y159 w185", c.clipboardHistoryKey)
+
     ; 分割线
-    g.Add("Text", "x10 y110 w320 h1 BackgroundDDDDDD")
+    g.Add("Text", "x10 y190 w320 h1 BackgroundDDDDDD")
 
     ; === 显示时长 ===
     g.SetFont("Bold")
-    g.Add("Text", "x20 y122", T("set_duration"))
+    g.Add("Text", "x20 y202", T("set_duration"))
     g.SetFont("Norm")
 
-    g.Add("Text", "x20 y147 w110", T("set_caps_label"))
+    g.Add("Text", "x20 y227 w110", T("set_caps_label"))
     ; 时长滑块量程 100-3000ms 实用区间，更大值可手输（保存仍钳到 99999）
-    g.ctl_capsDur := AddNumSlider(g, "capsDur", 135, 144, 100, 3000, c.capsShowDuration, "ms", 100)
-    g.Add("Text", "x20 y177 w110", T("set_copy_label"))
-    g.ctl_copyDur := AddNumSlider(g, "copyDur", 135, 174, 100, 3000, c.copyShowDuration, "ms", 100)
+    g.ctl_capsDur := AddNumSlider(g, "capsDur", 135, 224, 100, 3000, c.capsShowDuration, "ms", 100)
+    g.Add("Text", "x20 y257 w110", T("set_copy_label"))
+    g.ctl_copyDur := AddNumSlider(g, "copyDur", 135, 254, 100, 3000, c.copyShowDuration, "ms", 100)
 
-    g.Add("Text", "x10 y202 w320 h1 BackgroundDDDDDD")
+    g.Add("Text", "x10 y282 w320 h1 BackgroundDDDDDD")
 
     ; === 提示位置 ===
     g.SetFont("Bold")
-    g.Add("Text", "x20 y214", T("set_position"))
+    g.Add("Text", "x20 y294", T("set_position"))
     g.SetFont("Norm")
 
     ; 位置分段选项条（Win11 分段控件样式）：每段两块实底 Text 叠放（激活=蓝底粗体 / 未激活=灰底），
     ; 点击切显隐。无 BackgroundTrans、无控件移动 → 无重绘伪影。序号→tipPosition: 1鼠标/2顶部/3底部/4中央
-    g.Add("Text", "x20 y240 w300 h26 BackgroundE3E6E8")   ; 条底座
+    g.Add("Text", "x20 y320 w300 h26 BackgroundE3E6E8")   ; 条底座
     g.ctl_posSegs := []
     segKeys := ["pos_mouse", "pos_top", "pos_bottom", "pos_center"]
     loop 4 {
         x := 21 + (A_Index - 1) * 75
-        onCtrl := g.Add("Text", "x" x " y241 w72 h24 Center +0x200 BackgroundCCE4F7 c0067C4", T(segKeys[A_Index]))
+        onCtrl := g.Add("Text", "x" x " y321 w72 h24 Center +0x200 BackgroundCCE4F7 c0067C4", T(segKeys[A_Index]))
         onCtrl.SetFont("Bold")   ; v2 字体样式不能放创建选项，只能 SetFont
-        offCtrl := g.Add("Text", "x" x " y241 w72 h24 Center +0x200 BackgroundECECEC c444444", T(segKeys[A_Index]))
+        offCtrl := g.Add("Text", "x" x " y321 w72 h24 Center +0x200 BackgroundECECEC c444444", T(segKeys[A_Index]))
         onCtrl.Visible := false
         onCtrl.SegIdx := A_Index, offCtrl.SegIdx := A_Index
         onCtrl.OnEvent("Click", OnPosSegClick), offCtrl.OnEvent("Click", OnPosSegClick)
@@ -1448,27 +1520,27 @@ ShowSettings(*) {
     ; 鼠标2行 / 顶底1行 / 中央0行 → 分割线及以下由 ReflowBelow 整体平移折叠，窗口高同步收缩
     ; 方位 radio 显式 h22：YaHei 下自动高约 28px，底边会压到下方控件，悬停重绘出伪影
     g.belowCtrls := []
-    g.ctl_mouseOffset := AddNumSlider(g, "mouseOffset", 14, 282, 0, 100, c.tipMouseOffset, "px", 5)
-    g.ctl_mouseBr := g.Add("Radio", "x20 y312 h22 w70 +Group" . (!c.tipMouseAbove ? " Checked" : ""), T("pos_mouse_br"))
-    g.ctl_mouseTr := g.Add("Radio", "x100 y312 h22 w70" . (c.tipMouseAbove ? " Checked" : ""), T("pos_mouse_tr"))
-    g.ctl_topOffset := AddNumSlider(g, "topOffset", 14, 282, 0, 500, c.tipTopOffset, "px", 10)
-    g.ctl_bottomOffset := AddNumSlider(g, "bottomOffset", 14, 282, 0, 500, c.tipBottomOffset, "px", 10)
+    g.ctl_mouseOffset := AddNumSlider(g, "mouseOffset", 14, 362, 0, 100, c.tipMouseOffset, "px", 5)
+    g.ctl_mouseBr := g.Add("Radio", "x20 y392 h22 w70 +Group" . (!c.tipMouseAbove ? " Checked" : ""), T("pos_mouse_br"))
+    g.ctl_mouseTr := g.Add("Radio", "x100 y392 h22 w70" . (c.tipMouseAbove ? " Checked" : ""), T("pos_mouse_tr"))
+    g.ctl_topOffset := AddNumSlider(g, "topOffset", 14, 362, 0, 500, c.tipTopOffset, "px", 10)
+    g.ctl_bottomOffset := AddNumSlider(g, "bottomOffset", 14, 362, 0, 500, c.tipBottomOffset, "px", 10)
     SetPosSegment(g, PosSegOf(c.tipPosition))   ; 初始化激活段（此时下方控件尚未创建，登记表为空，ReflowBelow 是空转）
 
     ; 以下控件全部登记进 belowCtrls：位置面板行数变化时由 ReflowBelow 整体平移（显隐归 SyncPositionPanel 管）
-    TrackBelow(g, g.Add("Text", "x10 y340 w320 h1 BackgroundDDDDDD"))   ; 分割线
+    TrackBelow(g, g.Add("Text", "x10 y420 w320 h1 BackgroundDDDDDD"))   ; 分割线
 
     ; === 外观样式 ===
     g.SetFont("Bold")
-    TrackBelow(g, g.Add("Text", "x20 y352", T("set_appearance")))
+    TrackBelow(g, g.Add("Text", "x20 y432", T("set_appearance")))
     g.SetFont("Norm")
 
-    g.ctl_themeAuto := TrackBelow(g, g.Add("Radio", "x20 y377 w120 +Group" . (c.tipLightMode = "auto" ? " Checked" : ""), T("app_auto")))
-    g.ctl_lightMode := TrackBelow(g, g.Add("Radio", "x20 y404 w100" . (c.tipLightMode = "light" ? " Checked" : ""), T("app_light")))
-    g.ctl_darkMode := TrackBelow(g, g.Add("Radio", "x200 y404 w100" . (c.tipLightMode = "dark" ? " Checked" : ""), T("app_dark")))
-    TrackBelow(g, g.Add("Text", "x20 y434 w70", T("set_fontsize")))
-    g.ctl_fontSize := TrackBelow(g, AddNumSlider(g, "fontSize", 145, 431, 8, 72, c.tipFontSize, "pt"))
-    g.ctl_bold := TrackBelow(g, g.Add("CheckBox", "x20 y464", T("set_bold")))   ; 加粗独占一行（与方位选项同款换行处理，英文 Bold 也不再挤压）
+    g.ctl_themeAuto := TrackBelow(g, g.Add("Radio", "x20 y457 w120 +Group" . (c.tipLightMode = "auto" ? " Checked" : ""), T("app_auto")))
+    g.ctl_lightMode := TrackBelow(g, g.Add("Radio", "x20 y484 w100" . (c.tipLightMode = "light" ? " Checked" : ""), T("app_light")))
+    g.ctl_darkMode := TrackBelow(g, g.Add("Radio", "x200 y484 w100" . (c.tipLightMode = "dark" ? " Checked" : ""), T("app_dark")))
+    TrackBelow(g, g.Add("Text", "x20 y514 w70", T("set_fontsize")))
+    g.ctl_fontSize := TrackBelow(g, AddNumSlider(g, "fontSize", 145, 511, 8, 72, c.tipFontSize, "pt"))
+    g.ctl_bold := TrackBelow(g, g.Add("CheckBox", "x20 y544", T("set_bold")))   ; 加粗独占一行（与方位选项同款换行处理，英文 Bold 也不再挤压）
     g.ctl_bold.Value := c.tipFontBold
 
     ; === 实时预览：视觉控件改动立即按未保存设置显示 tip，不写盘（保存才落定，取消回滚）===
@@ -1486,35 +1558,35 @@ ShowSettings(*) {
     ; 值由 保存/恢复默认 经 SyncConfigFromGui 直读控件落盘
 
     ; === 语言 ===
-    TrackBelow(g, g.Add("Text", "x20 y494 w80", T("set_language")))
+    TrackBelow(g, g.Add("Text", "x20 y574 w80", T("set_language")))
     langIdx := Map("auto",1,"zh",2,"en",3)[Config.language]
-    g.ctl_lang := TrackBelow(g, g.Add("DDL", "x200 y491 w120 AltSubmit Choose" . langIdx, [T("lang_auto"), T("lang_zh"), T("lang_en")]))
+    g.ctl_lang := TrackBelow(g, g.Add("DDL", "x200 y571 w120 AltSubmit Choose" . langIdx, [T("lang_auto"), T("lang_zh"), T("lang_en")]))
     g.ctl_lang.OnEvent("Change", OnLangChange)
 
-    TrackBelow(g, g.Add("Text", "x10 y522 w320 h1 BackgroundDDDDDD"))
+    TrackBelow(g, g.Add("Text", "x10 y602 w320 h1 BackgroundDDDDDD"))
 
     ; === 版本（版本号 + 检查更新，同一行基线对齐）===
     g.SetFont("Bold")
-    TrackBelow(g, g.Add("Text", "x20 y536", T("about_title") . " (v" . VERSION . ")"))
+    TrackBelow(g, g.Add("Text", "x20 y616", T("about_title") . " (v" . VERSION . ")"))
     g.SetFont("Norm")
-    g.ctl_updStatus := TrackBelow(g, g.Add("Text", "x130 y536 w114", ""))   ; w114 容纳「发现新版本 v1.3.1」不裁字
-    g.ctl_updBtn := TrackBelow(g, g.Add("Button", "x244 y534 w76 h24", T("btn_check_update")))
+    g.ctl_updStatus := TrackBelow(g, g.Add("Text", "x130 y616 w114", ""))   ; w114 容纳「发现新版本 v1.3.1」不裁字
+    g.ctl_updBtn := TrackBelow(g, g.Add("Button", "x244 y614 w76 h24", T("btn_check_update")))
     g.ctl_updBtn.OnEvent("Click", OnUpdateButtonClick)
-    TrackBelow(g, g.Add("Text", "x10 y566 w320 h1 BackgroundDDDDDD"))
+    TrackBelow(g, g.Add("Text", "x10 y646 w320 h1 BackgroundDDDDDD"))
 
     ; === 按钮（永远在窗口最底部）===
-    TrackBelow(g, g.Add("Button", "x20 y577 w80", T("btn_reset"))).OnEvent("Click", SettingsReset)
-    TrackBelow(g, g.Add("Button", "x130 y577 w80", T("btn_cancel"))).OnEvent("Click", SettingsClose)
-    TrackBelow(g, g.Add("Button", "x240 y577 w80 Default", T("btn_save"))).OnEvent("Click", SettingsSave)
+    TrackBelow(g, g.Add("Button", "x20 y657 w80", T("btn_reset"))).OnEvent("Click", SettingsReset)
+    TrackBelow(g, g.Add("Button", "x130 y657 w80", T("btn_cancel"))).OnEvent("Click", SettingsClose)
+    TrackBelow(g, g.Add("Button", "x240 y657 w80 Default", T("btn_save"))).OnEvent("Click", SettingsSave)
     g.OnEvent("Close", SettingsClose)
 
     ; 底部信息
     icoPath := A_Temp . "\CursorTip_github.ico"
     FileInstall("assets\github.ico", icoPath, 1)
-    TrackBelow(g, g.Add("Picture", "x20 y617 w16 h16", icoPath)).OnEvent("Click", (*) => Run("https://github.com/zeno528/CursorTip"))
+    TrackBelow(g, g.Add("Picture", "x20 y697 w16 h16", icoPath)).OnEvent("Click", (*) => Run("https://github.com/zeno528/CursorTip"))
     g.SetFont("s8", "Microsoft YaHei")
-    TrackBelow(g, g.Add("Link", "x40 y619", '<a href="https://github.com/zeno528/CursorTip">' . T("link_about") . '</a>'))
-    TrackBelow(g, g.Add("Text", "x200 y619", "© 2026  MIT License"))
+    TrackBelow(g, g.Add("Link", "x40 y699", '<a href="https://github.com/zeno528/CursorTip">' . T("link_about") . '</a>'))
+    TrackBelow(g, g.Add("Text", "x200 y699", "© 2026  MIT License"))
 
     ; 有记忆位置就在原位显示（切语言重建时新窗口完整覆盖旧窗口，消除空帧/灰线）
     showOpts := "w340 h" . SETTINGS_BASE_H   ; 基础高（鼠标段2行）；实际高由 ReflowBelow 按当前段收缩（顶底617/中央587）
@@ -1576,6 +1648,9 @@ SnapshotSettings(g) {
         ime: g.ctl_ime.Value,
         imeEnabled: g.ctl_ime.Enabled,
         copy: g.ctl_copy.Value,
+        history: g.ctl_history.Value,
+        histMax: g.ctl_histMax.Value,
+        hotkey: g.ctl_hotkey.Value,
         capsDur: g.ctl_capsDur.Value,
         copyDur: g.ctl_copyDur.Value,
         posSeg: g.ctl_posSeg,
@@ -1598,6 +1673,9 @@ RestoreSettings(g, s) {
     g.ctl_ime.Value := s.ime
     g.ctl_ime.Enabled := s.imeEnabled
     g.ctl_copy.Value := s.copy
+    g.ctl_history.Value := s.history
+    g.ctl_histMax.Value := s.histMax
+    g.ctl_hotkey.Value := s.hotkey
     g.ctl_capsDur.Value := s.capsDur
     g.ctl_copyDur.Value := s.copyDur
     SetPosSegment(g, s.posSeg)
@@ -1776,7 +1854,8 @@ OnPreviewChange(ctl, kind) {
     c := Config
     ; 显示时长不预览：拖动每档弹一次 tip 是打扰；Config 内存也不实时写，
     ; 保存/恢复默认走 SyncConfigFromGui 直读控件（取消则控件值自然丢弃，无需回滚）
-    if (kind = "capsDur" || kind = "copyDur")
+    ; histMax 同理：AddNumSlider 内部统一走 OnPreviewChange，不短路的话拖条数也会弹 tip
+    if (kind = "capsDur" || kind = "copyDur" || kind = "histMax")
         return
     needMeasure := false   ; 只有字号/粗细变化才需重测 tipFixedWidth/Height
 
@@ -1851,6 +1930,9 @@ SettingsReset(ctrl, *) {
     g.ctl_ime.Value := d.showIMEStatus
     g.ctl_ime.Enabled := d.enableCapsTip
     g.ctl_copy.Value := d.enableCopyTip
+    g.ctl_history.Value := d.enableClipboardHistory
+    g.ctl_histMax.Value := d.clipboardHistoryMax
+    g.ctl_hotkey.Value := d.clipboardHistoryKey
 
     g.ctl_capsDur.Value := d.capsShowDuration
     g.ctl_copyDur.Value := d.copyShowDuration
@@ -1885,6 +1967,10 @@ SyncConfigFromGui(g) {
     c := Config
     c.enableCapsTip := g.ctl_caps.Value
     c.enableCopyTip := g.ctl_copy.Value
+    c.enableClipboardHistory := g.ctl_history.Value
+    c.clipboardHistoryMax := Max(10, Min(200, Integer(g.ctl_histMax.Value || 50)))
+    ; Hotkey 控件被清空时值为空串 → 回退默认，避免存进去一个空键位导致面板再也唤不出
+    c.clipboardHistoryKey := (g.ctl_hotkey.Value != "") ? g.ctl_hotkey.Value : "^+v"
     c.showIMEStatus := g.ctl_ime.Value
 
     c.capsShowDuration := Max(100, Integer(g.ctl_capsDur.Value || 800))
@@ -1913,6 +1999,10 @@ SettingsSave(ctrl, *) {
 
     Config.Save()
     ApplySettings()
+
+    ; 上限调小后立即裁剪并落盘（SyncConfigFromGui 已把新上限写进 Config）
+    TrimHistory()
+    SaveHistory()
 
     g.Destroy()
     settingsGui := ""

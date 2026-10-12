@@ -1,6 +1,7 @@
 # 编译产物
 dist/
 config.ini
+clipboard_history.dat
 
 # 本地历史归档
 archive/
