@@ -149,7 +149,7 @@ global L := Map(
         "set_select", "🖱 选中文本提示",
         "set_duration", "显示时长",
         "set_caps_label", "大小写提示:",
-        "set_copy_label", "复制提示:",
+        "set_copy_label", "复制/选中提示:",
         "set_position", "提示位置",
         "pos_mouse", "跟随鼠标",
         "pos_mouse_br", "右下",
@@ -205,7 +205,7 @@ global L := Map(
         "set_select", "🖱 Selection tip",
         "set_duration", "Duration",
         "set_caps_label", "CapsLock tip:",
-        "set_copy_label", "Copy tip:",
+        "set_copy_label", "Copy/Select:",
         "set_position", "Position",
         "pos_mouse", "Mouse",
         "pos_mouse_br", "Below",
@@ -282,6 +282,8 @@ global tipFixedWidth := 0  ; Caps/IME 提示固定宽度（按英文最宽文本
 global tipFixedHeight := 0  ; 固定提示控件高度（MeasureTipFixedWidth 一并测出）
 global tipBuiltTheme := ""  ; 当前 tip 窗口已用的配色主题（light/dark），预览时按需增量换色
 global tipGuiIsFixed := false  ; 当前 tipGui 是否固定宽度模式（决定能否复用窗口避免闪烁）
+global tipAlpha := 255         ; 浮标当前透明度（淡入淡出动画追踪用）
+global tipFadeGen := 0         ; 淡入淡出代数：新显示/隐藏请求递增，在途动画自链定时器据此失效
 
 ; 应用内更新状态机（详见「自动更新」段）
 global g_updateState := "idle"      ; idle/checking/uptodate/available/downloading/failed
@@ -294,7 +296,7 @@ global UPD_API := "https://github.com/zeno528/CursorTip/releases.atom"   ; Atom 
 global UPD_DL_BASE := "https://github.com/zeno528/CursorTip/releases/download/"
 global UPD_TEMP_JSON := A_Temp . "\CursorTip_update.json"
 global UPD_TEMP_EXE := A_Temp . "\CursorTip_update.exe"
-global SETTINGS_BASE_H := 647       ; 设置窗口基础高（鼠标段2行，607 + 关于板块）；实际高由 ReflowBelow 收缩
+global SETTINGS_BASE_H := 593       ; 设置窗口基础高（参数面板1行）；实际高由 ReflowBelow 收缩（中央段563）
 
 
 ; ============================================================
@@ -813,7 +815,9 @@ MeasureTipFixedWidth() {
 
 ; 销毁当前 tip 窗口并清状态：预览/ApplySettings 调用，强制下次 ShowTip 走重建分支以应用新外观
 DestroyTipGui() {
-    global tipGui, tipGuiText, tipGuiIsFixed
+    global tipGui, tipGuiText, tipGuiIsFixed, tipAlpha, tipFadeGen
+    tipFadeGen++               ; 在途动画随窗口销毁自然失效（tick 内 IsWindow 守卫兜底）
+    tipAlpha := 255
     if (IsObject(tipGui)) {
         try tipGui.Destroy()
         tipGui := ""
@@ -842,13 +846,14 @@ ShowTipAt(gw, gh) {
 }
 
 ShowTip(text, duration := 0, fixedWidth := false) {
-    global tipGui, tipGuiText, tipFixedWidth, tipFixedHeight, tipGuiIsFixed, tipBuiltTheme
+    global tipGui, tipGuiText, tipFixedWidth, tipFixedHeight, tipGuiIsFixed, tipBuiltTheme, tipAlpha, tipFadeGen
     c := Config
     FileAppend("CursorTip: ShowTip text='" . text . "' dur=" . duration . " fixed=" . fixedWidth . "`n", "work\debug.log")
 
     ; 涉及窗口句柄和定时器，防止 timer/热键重入导致状态错乱
     Critical
     try {
+        tipFadeGen++   ; 作废在途淡入/淡出：新一轮显示自带最新一代（快速切换不闪烁的关键）
         winValid := IsObject(tipGui) ? DllCall("IsWindow", "Ptr", tipGui.Hwnd) : 0
 
         ; 仅固定宽度模式（Caps/IME 提示）复用窗口：控件宽度恒定，只改 .Value 即可，
@@ -857,6 +862,7 @@ ShowTip(text, duration := 0, fixedWidth := false) {
         ; （历史复用 bug 全源于「要重算宽度」：中文截断 / 控件堆叠变高 / 重绘残影——
         ;   固定宽度下不重算，这些坑不存在。）
         if (fixedWidth && tipGuiIsFixed && winValid && IsObject(tipGuiText)) {
+            wasVisible := DllCall("IsWindowVisible", "Ptr", tipGui.Hwnd)   ; 决定淡入还是瞬时复原
             ; 原地更新（同一 HWND，杜绝重建首帧空窗）。关键：变更门控——
             ; 属性没变就一个都不碰，常规弹出/位置拖动保持零重绘（回归教训：每 tick 摸一遍
             ; BackColor/SetFont/Move 会触发整窗擦除重绘，把原本丝滑的位置拖动搞闪）
@@ -880,8 +886,14 @@ ShowTip(text, duration := 0, fixedWidth := false) {
             ; 每 tick 盲写会让文字区反复重绘产生轻微闪烁
             if (tipGuiText.Value != text)
                 tipGuiText.Value := text
+            if (!wasVisible)
+                TipSetAlpha(tipGui.Hwnd, 0), tipAlpha := 0   ; 显示前置全透明，杜绝首帧直出
+            else if (tipAlpha != 255)
+                TipSetAlpha(tipGui.Hwnd, 255), tipAlpha := 255   ; 淡出中途复用：瞬时复原
             tipGui.GetPos(,, &gw, &gh)
             ShowTipAt(gw, gh)
+            if (!wasVisible)
+                TipAnimateAlpha(255, 100)   ; 隐藏后复用：淡入
         } else {
             ; 宽度模式变化或窗口无效：重建，AutoSize 全新计算尺寸。
             ; 旧窗口不先销毁——新窗口 Show 覆盖后再销毁，消除重建空帧闪烁（与设置窗口切语言同招）
@@ -890,7 +902,7 @@ ShowTip(text, duration := 0, fixedWidth := false) {
             tipGuiText := ""
 
             ; E0x02000000(WS_EX_COMPOSITED)：子控件双缓冲绘制，背景擦除与文字绘制原子提交，防拖动重绘撕裂
-            tipGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +E0x02000000", "")
+            tipGui := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +E0x02000000 +E0x80000", "")
             theme := (c.tipLightMode = "auto") ? GetSystemTheme() : c.tipLightMode
             tipBuiltTheme := theme
             if (theme = "light") {
@@ -916,8 +928,10 @@ ShowTip(text, duration := 0, fixedWidth := false) {
 
             ; 先在隐藏状态下 AutoSize 取尺寸，再一次性定位显示
             tipGui.Show("Hide AutoSize")
+            TipSetAlpha(tipGui.Hwnd, 0), tipAlpha := 0   ; 淡入起点：显示前置全透明，杜绝首帧直出
             tipGui.GetPos(,, &gw, &gh)
             ShowTipAt(gw, gh)
+            TipAnimateAlpha(255, 100)
             tipGuiIsFixed := fixedWidth
 
             ; 新窗口已显示，此刻销毁旧窗口无视觉中断
@@ -936,17 +950,65 @@ ShowTip(text, duration := 0, fixedWidth := false) {
 }
 
 HideTip() {
-    global tipGui
+    global tipGui, tipFadeGen
 
     ; HideTip 也操作 tipGui，避免被 ShowTip 重入导致隐藏错窗口
     Critical
     try {
-        if (IsObject(tipGui) && DllCall("IsWindow", "Ptr", tipGui.Hwnd)) {
-            tipGui.Hide()
-        }
         SetTimer(HideTip, 0)
+        if (IsObject(tipGui) && DllCall("IsWindow", "Ptr", tipGui.Hwnd)) {
+            tipFadeGen++                       ; 作废在途淡入
+            TipAnimateAlpha(0, 80, true)       ; 淡出结束后自动 Hide 并复原 alpha
+        }
     } finally {
         Critical "Off"
+    }
+}
+
+; ============================================================
+; 浮标淡入淡出（全局，所有 tip 共用）：SetLayeredWindowAttributes 只动
+; 合成器 alpha，不触碰重绘管线——与「零重绘」的窗口复用/快速切换机制天然兼容
+; ============================================================
+TipSetAlpha(hwnd, a) {
+    DllCall("user32\SetLayeredWindowAttributes", "Ptr", hwnd, "UInt", 0, "UChar", a, "UInt", 2)  ; LWA_ALPHA
+}
+
+; 从当前 alpha 向 target 过渡 ms 毫秒；hideWhenDone=true 时结束后隐藏并复原 alpha。
+; 自链一次性定时器（-16ms/步），tipFadeGen 代数守卫：新显示/隐藏请求让在途动画自动失效。
+TipAnimateAlpha(target, ms, hideWhenDone := false) {
+    global tipGui, tipAlpha, tipFadeGen
+    if (!IsObject(tipGui) || !DllCall("IsWindow", "Ptr", tipGui.Hwnd))
+        return
+    hwnd := tipGui.Hwnd
+    from := tipAlpha
+    if (from = target) {   ; 已到位：幂等返回（快速连续调用无副作用）
+        if (hideWhenDone) {
+            tipGui.Hide()
+            tipAlpha := 255
+            TipSetAlpha(hwnd, 255)
+        }
+        return
+    }
+    TipFadeTick(++tipFadeGen, hwnd, from, target, ms, hideWhenDone, A_TickCount)
+}
+
+TipFadeTick(gen, hwnd, from, target, ms, hideWhenDone, startTick) {
+    global tipGui, tipAlpha, tipFadeGen
+    if (gen != tipFadeGen || !DllCall("IsWindow", "Ptr", hwnd))
+        return   ; 代数过期（新动画已接管）或窗口已销毁：静默停止
+    p := Min(1, (A_TickCount - startTick) / ms)
+    a := Round(from + (target - from) * p)
+    TipSetAlpha(hwnd, a)
+    tipAlpha := a
+    if (p >= 1) {
+        if (hideWhenDone) {
+            if (IsObject(tipGui) && tipGui.Hwnd = hwnd)
+                tipGui.Hide()
+            tipAlpha := 255
+            TipSetAlpha(hwnd, 255)   ; 复原，下次淡入从 0 重来
+        }
+    } else {
+        SetTimer(TipFadeTick.Bind(gen, hwnd, from, target, ms, hideWhenDone, startTick), -16)
     }
 }
 
@@ -1496,6 +1558,7 @@ ShowSettings(*) {
     ; 时长滑块量程 100-3000ms 实用区间，更大值可手输（保存仍钳到 99999）
     g.ctl_capsDur := AddNumSlider(g, "capsDur", 135, 144, 100, 3000, c.capsShowDuration, "ms", 100)
     g.Add("Text", "x20 y177 w110", T("set_copy_label"))
+    ; 此滑块同时控制复制提示与选中文本提示的时长（MaybeShowSelectTip 复用 copyShowDuration）
     g.ctl_copyDur := AddNumSlider(g, "copyDur", 135, 174, 100, 3000, c.copyShowDuration, "ms", 100)
 
     g.Add("Text", "x10 y202 w320 h1 BackgroundDDDDDD")
@@ -1523,31 +1586,31 @@ ShowSettings(*) {
     }
 
     ; 参数面板（动态布局）：滑块统一居左 x14（Slider 轨道有内边距，左移后与上方选项条左缘对齐）；
-    ; 鼠标段方位选项独占第二行（英文 Below/Above 词长，挤滑块右侧放不下）。行数随段变化：
-    ; 鼠标2行 / 顶底1行 / 中央0行 → 分割线及以下由 ReflowBelow 整体平移折叠，窗口高同步收缩
-    ; 方位 radio 显式 h22：YaHei 下自动高约 28px，底边会压到下方控件，悬停重绘出伪影
+    ; 鼠标段方位选项与偏移滑块同一行（px 单位右侧）。radio w64：英文 Below/Above 单行放得下不换行；
+    ; 与滑块行同 y 同 h22，圆圈/文字与输入框垂直居中对齐。三段滑块同 y，切段不跳动。
+    ; 行数随段变化：鼠标/顶底1行 / 中央0行 → 分割线及以下由 ReflowBelow 整体平移折叠，窗口高同步收缩
     g.belowCtrls := []
-    g.ctl_mouseOffset := AddNumSlider(g, "mouseOffset", 14, 282, 0, 100, c.tipMouseOffset, "px", 5)
-    g.ctl_mouseBr := g.Add("Radio", "x20 y312 h22 w70 +Group" . (!c.tipMouseAbove ? " Checked" : ""), T("pos_mouse_br"))
-    g.ctl_mouseTr := g.Add("Radio", "x100 y312 h22 w70" . (c.tipMouseAbove ? " Checked" : ""), T("pos_mouse_tr"))
-    g.ctl_topOffset := AddNumSlider(g, "topOffset", 14, 282, 0, 500, c.tipTopOffset, "px", 10)
-    g.ctl_bottomOffset := AddNumSlider(g, "bottomOffset", 14, 282, 0, 500, c.tipBottomOffset, "px", 10)
+    g.ctl_mouseOffset := AddNumSlider(g, "mouseOffset", 14, 280, 0, 100, c.tipMouseOffset, "px", 5)
+    g.ctl_mouseBr := g.Add("Radio", "x192 y280 h22 w64 +Group" . (!c.tipMouseAbove ? " Checked" : ""), T("pos_mouse_br"))
+    g.ctl_mouseTr := g.Add("Radio", "x258 y280 h22 w64" . (c.tipMouseAbove ? " Checked" : ""), T("pos_mouse_tr"))
+    g.ctl_topOffset := AddNumSlider(g, "topOffset", 14, 280, 0, 500, c.tipTopOffset, "px", 10)
+    g.ctl_bottomOffset := AddNumSlider(g, "bottomOffset", 14, 280, 0, 500, c.tipBottomOffset, "px", 10)
     SetPosSegment(g, PosSegOf(c.tipPosition))   ; 初始化激活段（此时下方控件尚未创建，登记表为空，ReflowBelow 是空转）
 
     ; 以下控件全部登记进 belowCtrls：位置面板行数变化时由 ReflowBelow 整体平移（显隐归 SyncPositionPanel 管）
-    TrackBelow(g, g.Add("Text", "x10 y340 w320 h1 BackgroundDDDDDD"))   ; 分割线
+    TrackBelow(g, g.Add("Text", "x10 y316 w320 h1 BackgroundDDDDDD"))   ; 分割线
 
     ; === 外观样式 ===
     g.SetFont("Bold")
-    TrackBelow(g, g.Add("Text", "x20 y352", T("set_appearance")))
+    TrackBelow(g, g.Add("Text", "x20 y328", T("set_appearance")))
     g.SetFont("Norm")
 
-    g.ctl_themeAuto := TrackBelow(g, g.Add("Radio", "x20 y377 w120 +Group" . (c.tipLightMode = "auto" ? " Checked" : ""), T("app_auto")))
-    g.ctl_lightMode := TrackBelow(g, g.Add("Radio", "x20 y404 w100" . (c.tipLightMode = "light" ? " Checked" : ""), T("app_light")))
-    g.ctl_darkMode := TrackBelow(g, g.Add("Radio", "x200 y404 w100" . (c.tipLightMode = "dark" ? " Checked" : ""), T("app_dark")))
-    TrackBelow(g, g.Add("Text", "x20 y434 w70", T("set_fontsize")))
-    g.ctl_fontSize := TrackBelow(g, AddNumSlider(g, "fontSize", 145, 431, 8, 72, c.tipFontSize, "pt"))
-    g.ctl_bold := TrackBelow(g, g.Add("CheckBox", "x20 y464", T("set_bold")))   ; 加粗独占一行（与方位选项同款换行处理，英文 Bold 也不再挤压）
+    g.ctl_themeAuto := TrackBelow(g, g.Add("Radio", "x20 y353 w120 +Group" . (c.tipLightMode = "auto" ? " Checked" : ""), T("app_auto")))
+    g.ctl_lightMode := TrackBelow(g, g.Add("Radio", "x20 y380 w100" . (c.tipLightMode = "light" ? " Checked" : ""), T("app_light")))
+    g.ctl_darkMode := TrackBelow(g, g.Add("Radio", "x200 y380 w100" . (c.tipLightMode = "dark" ? " Checked" : ""), T("app_dark")))
+    TrackBelow(g, g.Add("Text", "x20 y410 w70", T("set_fontsize")))
+    g.ctl_fontSize := TrackBelow(g, AddNumSlider(g, "fontSize", 145, 407, 8, 72, c.tipFontSize, "pt"))
+    g.ctl_bold := TrackBelow(g, g.Add("CheckBox", "x20 y440", T("set_bold")))   ; 加粗独占一行（与方位选项同款换行处理，英文 Bold 也不再挤压）
     g.ctl_bold.Value := c.tipFontBold
 
     ; === 实时预览：视觉控件改动立即按未保存设置显示 tip，不写盘（保存才落定，取消回滚）===
@@ -1565,38 +1628,38 @@ ShowSettings(*) {
     ; 值由 保存/恢复默认 经 SyncConfigFromGui 直读控件落盘
 
     ; === 语言 ===
-    TrackBelow(g, g.Add("Text", "x20 y494 w80", T("set_language")))
+    TrackBelow(g, g.Add("Text", "x20 y470 w80", T("set_language")))
     langIdx := Map("auto",1,"zh",2,"en",3)[Config.language]
-    g.ctl_lang := TrackBelow(g, g.Add("DDL", "x200 y491 w120 AltSubmit Choose" . langIdx, [T("lang_auto"), T("lang_zh"), T("lang_en")]))
+    g.ctl_lang := TrackBelow(g, g.Add("DDL", "x200 y467 w120 AltSubmit Choose" . langIdx, [T("lang_auto"), T("lang_zh"), T("lang_en")]))
     g.ctl_lang.OnEvent("Change", OnLangChange)
 
-    TrackBelow(g, g.Add("Text", "x10 y522 w320 h1 BackgroundDDDDDD"))
+    TrackBelow(g, g.Add("Text", "x10 y498 w320 h1 BackgroundDDDDDD"))
 
     ; === 版本（版本号 + 检查更新，同一行基线对齐）===
     g.SetFont("Bold")
-    TrackBelow(g, g.Add("Text", "x20 y536", T("about_title") . " (v" . VERSION . ")"))
+    TrackBelow(g, g.Add("Text", "x20 y512", T("about_title") . " (v" . VERSION . ")"))
     g.SetFont("Norm")
-    g.ctl_updStatus := TrackBelow(g, g.Add("Text", "x130 y536 w114", ""))   ; w114 容纳「发现新版本 v1.3.1」不裁字
-    g.ctl_updBtn := TrackBelow(g, g.Add("Button", "x244 y534 w76 h24", T("btn_check_update")))
+    g.ctl_updStatus := TrackBelow(g, g.Add("Text", "x130 y512 w114", ""))   ; w114 容纳「发现新版本 v1.3.1」不裁字
+    g.ctl_updBtn := TrackBelow(g, g.Add("Button", "x244 y510 w76 h24", T("btn_check_update")))
     g.ctl_updBtn.OnEvent("Click", OnUpdateButtonClick)
-    TrackBelow(g, g.Add("Text", "x10 y566 w320 h1 BackgroundDDDDDD"))
+    TrackBelow(g, g.Add("Text", "x10 y542 w320 h1 BackgroundDDDDDD"))
 
     ; === 按钮（永远在窗口最底部）===
-    TrackBelow(g, g.Add("Button", "x20 y577 w80", T("btn_reset"))).OnEvent("Click", SettingsReset)
-    TrackBelow(g, g.Add("Button", "x130 y577 w80", T("btn_cancel"))).OnEvent("Click", SettingsClose)
-    TrackBelow(g, g.Add("Button", "x240 y577 w80 Default", T("btn_save"))).OnEvent("Click", SettingsSave)
+    TrackBelow(g, g.Add("Button", "x20 y553 w80", T("btn_reset"))).OnEvent("Click", SettingsReset)
+    TrackBelow(g, g.Add("Button", "x130 y553 w80", T("btn_cancel"))).OnEvent("Click", SettingsClose)
+    TrackBelow(g, g.Add("Button", "x240 y553 w80 Default", T("btn_save"))).OnEvent("Click", SettingsSave)
     g.OnEvent("Close", SettingsClose)
 
     ; 底部信息
     icoPath := A_Temp . "\CursorTip_github.ico"
     FileInstall("assets\github.ico", icoPath, 1)
-    TrackBelow(g, g.Add("Picture", "x20 y617 w16 h16", icoPath)).OnEvent("Click", (*) => Run("https://github.com/zeno528/CursorTip"))
+    TrackBelow(g, g.Add("Picture", "x20 y593 w16 h16", icoPath)).OnEvent("Click", (*) => Run("https://github.com/zeno528/CursorTip"))
     g.SetFont("s8", "Microsoft YaHei")
-    TrackBelow(g, g.Add("Link", "x40 y619", '<a href="https://github.com/zeno528/CursorTip">' . T("link_about") . '</a>'))
-    TrackBelow(g, g.Add("Text", "x200 y619", "© 2026  MIT License"))
+    TrackBelow(g, g.Add("Link", "x40 y595", '<a href="https://github.com/zeno528/CursorTip">' . T("link_about") . '</a>'))
+    TrackBelow(g, g.Add("Text", "x200 y595", "© 2026  MIT License"))
 
     ; 有记忆位置就在原位显示（切语言重建时新窗口完整覆盖旧窗口，消除空帧/灰线）
-    showOpts := "w340 h" . SETTINGS_BASE_H   ; 基础高（鼠标段2行）；实际高由 ReflowBelow 按当前段收缩（顶底617/中央587）
+    showOpts := "w340 h" . SETTINGS_BASE_H   ; 基础高（参数面板1行）；实际高由 ReflowBelow 按当前段收缩（中央563）
     if (settingsOpenPos != "")
         showOpts .= " x" . settingsOpenPos[1] . " y" . settingsOpenPos[2]
     ; 禁用 DWM 窗口过渡动画（DWMWA_TRANSITIONS_FORCEDISABLED=3）：新窗口瞬间不透明显示，
@@ -1797,7 +1860,7 @@ SyncPositionPanel(g) {
     SetSliderVisible(g.ctl_topOffset, idx = 2)
     SetSliderVisible(g.ctl_bottomOffset, idx = 3)
     g.ctl_mouseBr.Visible := g.ctl_mouseTr.Visible := (idx = 1)
-    ReflowBelow(g)   ; 行数随段变化（2/1/0），下方控件整体平移折叠
+    ReflowBelow(g)   ; 行数随段变化（1/1/0），下方控件整体平移折叠
 }
 
 ; 位置面板下方控件登记（引用 + 基础 Y）：面板行数变化时由 ReflowBelow 整体平移。返回 ctl 便于链式挂事件
@@ -1807,12 +1870,12 @@ TrackBelow(g, ctl) {
     return ctl
 }
 
-; 位置面板动态布局：鼠标段2行 / 顶底段1行 / 中央段0行，行距30。下方控件按 (2-行数)*30 上移折叠，
+; 位置面板动态布局：鼠标/顶底段1行 / 中央段0行，行距30。下方控件按 (1-行数)*30 上移折叠，
 ; 窗口高同步收缩避免底部留白。绝对定位（基于登记时的基础 Y），可安全重复调用；
-; AddNumSlider 三件套的滑块(y+1)/单位(y+3)随 Edit 同步移动。SETTINGS_BASE_H = 基础窗口高（鼠标段2行时）
+; AddNumSlider 三件套的滑块(y+1)/单位(y+3)随 Edit 同步移动。SETTINGS_BASE_H = 基础窗口高（参数面板1行）
 ReflowBelow(g) {
-    rows := (g.ctl_posSeg = 1) ? 2 : (g.ctl_posSeg = 4) ? 0 : 1
-    dy := (2 - rows) * 30
+    rows := (g.ctl_posSeg = 4) ? 0 : 1
+    dy := (1 - rows) * 30
     ; 整体 try：重排中途窗口被销毁（切语言重建/关闭竞态）时静默放弃。禁用 SendMessage 的
     ; ahk_id 窗口查找（隐藏窗口上会抛 Target window not found，已踩坑两次），全部走 Gui 自身 API
     try {
