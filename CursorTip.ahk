@@ -31,6 +31,7 @@ class Config {
     static Defaults := {
         enableCapsTip: true,
         enableCopyTip: true,
+        enableSelectTip: true,
         showIMEStatus: true,
         capsShowDuration: 800,
         copyShowDuration: 800,
@@ -48,6 +49,7 @@ class Config {
     ; 每个配置项声明为独立的静态属性（带默认值）
     static enableCapsTip := true
     static enableCopyTip := true
+    static enableSelectTip := true
     static showIMEStatus := true
     static capsShowDuration := 800
     static copyShowDuration := 800
@@ -70,6 +72,7 @@ class Config {
             c := Config
             c.enableCapsTip := IniRead(Config.Path, "Settings", "EnableCapsTip", 1) = 1
             c.enableCopyTip := IniRead(Config.Path, "Settings", "EnableCopyTip", 1) = 1
+            c.enableSelectTip := IniRead(Config.Path, "Settings", "EnableSelectTip", 1) = 1
             c.showIMEStatus := IniRead(Config.Path, "Settings", "ShowIMEStatus", 1) = 1
 
             c.capsShowDuration := Integer(IniRead(Config.Path, "Settings", "CapsShowDuration", 800))
@@ -98,6 +101,7 @@ class Config {
             c := Config
             IniWrite(c.enableCapsTip ? 1 : 0, Config.Path, "Settings", "EnableCapsTip")
             IniWrite(c.enableCopyTip ? 1 : 0, Config.Path, "Settings", "EnableCopyTip")
+            IniWrite(c.enableSelectTip ? 1 : 0, Config.Path, "Settings", "EnableSelectTip")
             IniWrite(c.showIMEStatus ? 1 : 0, Config.Path, "Settings", "ShowIMEStatus")
 
             IniWrite(c.capsShowDuration, Config.Path, "Settings", "CapsShowDuration")
@@ -136,11 +140,13 @@ global L := Map(
         "copy_image_files", "已复制：{n} 张图片",
         "copy_image", "已复制：图片",
         "copy_chars", "已复制：{n} 字符",
+        "select_chars", "已选中：{n} 字符",
         "set_features", "功能开关",
         "set_startup", "🚀 开机启动",
         "set_caps", "🔠 大小写提示",
         "set_ime", "🌐 显示中/英状态",
         "set_copy", "📋 复制提示",
+        "set_select", "🖱 选中文本提示",
         "set_duration", "显示时长",
         "set_caps_label", "大小写提示:",
         "set_copy_label", "复制提示:",
@@ -190,11 +196,13 @@ global L := Map(
         "copy_image_files", "Copied: {n} image(s)",
         "copy_image", "Copied: image",
         "copy_chars", "Copied: {n} char(s)",
+        "select_chars", "Selected: {n} char(s)",
         "set_features", "Features",
         "set_startup", "🚀 Run at startup",
         "set_caps", "🔠 CapsLock tip",
         "set_ime", "🌐 Show IME",
         "set_copy", "📋 Copy tip",
+        "set_select", "🖱 Selection tip",
         "set_duration", "Duration",
         "set_caps_label", "CapsLock tip:",
         "set_copy_label", "Copy tip:",
@@ -1127,12 +1135,14 @@ ArmShift() {
     global lShiftHeld
     lShiftHeld := false
     ShiftReleased()
+    MaybeShowSelectTip()
 }
 
 ~*RShift up:: {
     global rShiftHeld
     rShiftHeld := false
     ShiftReleased()
+    MaybeShowSelectTip()
 }
 
 ; Shift 松开：仅当全程「独立按下」才显示气泡
@@ -1280,12 +1290,17 @@ ShiftReleased() {
 ~*NumpadUp::
 ~*NumpadPgUp::
 ~*NumpadDel::
-~*LButton up::
 ~*RButton up::
 ~*MButton up::
 ~*XButton1 up::
 ~*XButton2 up:: {
     global shiftAlone := false
+}
+
+; 左键松开 = 拖选/双击/三击/Shift+点选的收尾动作，顺手报一次选中字数
+~*LButton up:: {
+    global shiftAlone := false
+    MaybeShowSelectTip()
 }
 
 ; ============================================================
@@ -1360,6 +1375,68 @@ ClipChanged(dataType) {
 }
 
 ; ============================================================
+; 选中文本计数（UI Automation 直读，不碰剪贴板、不发按键）
+; ============================================================
+
+; 读取焦点元素选区的字符数（UTF-16 码元，与复制提示 StrLen 同口径）。
+; 纯拉取式只读查询：任何一步失败/无 TextPattern/无选区返回 -1 或 0，调用方静默忽略。
+; 槽位与常量逐条核对自本机 SDK UIAutomationClient.idl/.h（10.0.26100.0）：
+;   IUIAutomation::GetFocusedElement=8 ｜ IUIAutomationElement::GetCurrentPatternAs=14
+;   IUIAutomationTextPattern::GetSelection=5 ｜ TextRangeArray::get_Length=3, GetElement=4
+;   IUIAutomationTextRange::GetText=12 ｜ UIA_TextPatternId=10014
+GetSelectionCharCount() {
+    static uia := 0              ; CUIAutomation 实例，进程内复用
+    static IID_TextPattern := 0  ; 二进制 GUID Buffer，供 REFIID 入参复用
+    try {
+        if (!IsObject(uia))
+            uia := ComObject("{FF48DBA4-60EF-4201-AA87-54103EEF594E}", "{30CBE57D-D9D0-452A-AB13-7AC5AC4825EE}")
+        if (!IsObject(IID_TextPattern)) {
+            IID_TextPattern := Buffer(16, 0)
+            DllCall("ole32\CLSIDFromString", "wstr", "{32EBA289-3583-42C9-9C59-3B6D9A1E9B6A}", "ptr", IID_TextPattern, "hresult")
+        }
+        ComCall(8, uia, "ptr*", &pElem := 0)                                  ; GetFocusedElement
+        if (!pElem)
+            return -1
+        elem := ComValue(13, pElem)                                           ; VT_UNKNOWN，GC 时自动 Release
+        ComCall(14, elem, "int", 10014, "ptr", IID_TextPattern, "ptr*", &pPat := 0)   ; GetCurrentPatternAs(TextPattern)
+        if (!pPat)                                                            ; 焦点元素不支持文本模式
+            return -1
+        pat := ComValue(13, pPat)
+        ComCall(5, pat, "ptr*", &pArr := 0)                                   ; GetSelection
+        if (!pArr)
+            return -1
+        arr := ComValue(13, pArr)
+        ComCall(3, arr, "int*", &nRanges := 0)                                ; get_Length
+        total := 0
+        Loop nRanges {
+            ComCall(4, arr, "int", A_Index - 1, "ptr*", &pRange := 0)         ; GetElement
+            if (!pRange)
+                continue
+            rng := ComValue(13, pRange)
+            ComCall(12, rng, "int", -1, "ptr*", &pBstr := 0)                  ; GetText(-1)
+            if (pBstr) {
+                total += DllCall("oleaut32\SysStringLen", "ptr", pBstr, "int")   ; BSTR 长度前缀 O(1)，不复制文本
+                DllCall("oleaut32\SysFreeString", "ptr", pBstr)
+            }
+        }
+        return total
+    } catch {
+        return -1
+    }
+}
+
+; 选中字数浮标入口：左键/Shift 松开时调用。开关关闭或无选区（折叠光标）不显示
+MaybeShowSelectTip() {
+    if (!Config.enableSelectTip)
+        return
+    n := GetSelectionCharCount()
+    if (n > 0) {
+        FileAppend("CursorTip: Selection -> " . n . " chars`n", "work\debug.log")
+        ShowTip(T("select_chars", n), Config.copyShowDuration)
+    }
+}
+
+; ============================================================
 ; 设置窗口
 ; ============================================================
 ShowSettings(*) {
@@ -1402,6 +1479,8 @@ ShowSettings(*) {
 
     g.ctl_copy := g.Add("CheckBox", "x20 y82 w130", T("set_copy"))
     g.ctl_copy.Value := c.enableCopyTip
+    g.ctl_select := g.Add("CheckBox", "x200 y82 w140", T("set_select"))
+    g.ctl_select.Value := c.enableSelectTip
 
     g.ctl_caps.OnEvent("Click", (ctrl, *) => ctrl.Gui.ctl_ime.Enabled := ctrl.Value)
 
@@ -1576,6 +1655,7 @@ SnapshotSettings(g) {
         ime: g.ctl_ime.Value,
         imeEnabled: g.ctl_ime.Enabled,
         copy: g.ctl_copy.Value,
+        select: g.ctl_select.Value,
         capsDur: g.ctl_capsDur.Value,
         copyDur: g.ctl_copyDur.Value,
         posSeg: g.ctl_posSeg,
@@ -1598,6 +1678,7 @@ RestoreSettings(g, s) {
     g.ctl_ime.Value := s.ime
     g.ctl_ime.Enabled := s.imeEnabled
     g.ctl_copy.Value := s.copy
+    g.ctl_select.Value := s.select
     g.ctl_capsDur.Value := s.capsDur
     g.ctl_copyDur.Value := s.copyDur
     SetPosSegment(g, s.posSeg)
@@ -1851,6 +1932,7 @@ SettingsReset(ctrl, *) {
     g.ctl_ime.Value := d.showIMEStatus
     g.ctl_ime.Enabled := d.enableCapsTip
     g.ctl_copy.Value := d.enableCopyTip
+    g.ctl_select.Value := d.enableSelectTip
 
     g.ctl_capsDur.Value := d.capsShowDuration
     g.ctl_copyDur.Value := d.copyShowDuration
@@ -1885,6 +1967,7 @@ SyncConfigFromGui(g) {
     c := Config
     c.enableCapsTip := g.ctl_caps.Value
     c.enableCopyTip := g.ctl_copy.Value
+    c.enableSelectTip := g.ctl_select.Value
     c.showIMEStatus := g.ctl_ime.Value
 
     c.capsShowDuration := Max(100, Integer(g.ctl_capsDur.Value || 800))
