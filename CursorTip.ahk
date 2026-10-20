@@ -173,7 +173,7 @@ global L := Map(
         "msg_saved", "设置已保存",
         "err_save_config", "保存配置失败：",
         "err_set_startup", "设置开机启动失败：",
-        "link_about", "GitHub",
+        "link_about", "官网",
         "about_title", "版本",
         "btn_check_update", "检查更新",
         "btn_upgrade", "立即升级",
@@ -229,7 +229,7 @@ global L := Map(
         "msg_saved", "Settings saved",
         "err_save_config", "Failed to save config: ",
         "err_set_startup", "Failed to set startup: ",
-        "link_about", "GitHub",
+        "link_about", "Website",
         "about_title", "Version",
         "btn_check_update", "Check",
         "btn_upgrade", "Upgrade",
@@ -296,7 +296,7 @@ global UPD_API := "https://github.com/zeno528/CursorTip/releases.atom"   ; Atom 
 global UPD_DL_BASE := "https://github.com/zeno528/CursorTip/releases/download/"
 global UPD_TEMP_JSON := A_Temp . "\CursorTip_update.json"
 global UPD_TEMP_EXE := A_Temp . "\CursorTip_update.exe"
-global SETTINGS_BASE_H := 593       ; 设置窗口基础高（参数面板1行）；实际高由 ReflowBelow 收缩（中央段563）
+global SETTINGS_BASE_H := 623       ; 设置窗口基础高（参数面板1行，含底部 GitHub 信息行 593-609）；实际高由 ReflowBelow 收缩（中央段593）
 
 
 ; ============================================================
@@ -1650,16 +1650,16 @@ ShowSettings(*) {
     TrackBelow(g, g.Add("Button", "x240 y553 w80 Default", T("btn_save"))).OnEvent("Click", SettingsSave)
     g.OnEvent("Close", SettingsClose)
 
-    ; 底部信息
-    icoPath := A_Temp . "\CursorTip_github.ico"
-    FileInstall("assets\github.ico", icoPath, 1)
-    TrackBelow(g, g.Add("Picture", "x20 y593 w16 h16", icoPath)).OnEvent("Click", (*) => Run("https://github.com/zeno528/CursorTip"))
+    ; 底部信息（官网）
+    icoPath := A_Temp . "\CursorTip_site.ico"
+    FileInstall("assets\app.ico", icoPath, 1)
+    TrackBelow(g, g.Add("Picture", "x20 y593 w16 h16", icoPath)).OnEvent("Click", (*) => Run("https://cursortip-website.pages.dev/"))
     g.SetFont("s8", "Microsoft YaHei")
-    TrackBelow(g, g.Add("Link", "x40 y595", '<a href="https://github.com/zeno528/CursorTip">' . T("link_about") . '</a>'))
+    TrackBelow(g, g.Add("Link", "x40 y595", '<a href="https://cursortip-website.pages.dev/">' . T("link_about") . '</a>'))
     TrackBelow(g, g.Add("Text", "x200 y595", "© 2026  MIT License"))
 
     ; 有记忆位置就在原位显示（切语言重建时新窗口完整覆盖旧窗口，消除空帧/灰线）
-    showOpts := "w340 h" . SETTINGS_BASE_H   ; 基础高（参数面板1行）；实际高由 ReflowBelow 按当前段收缩（中央563）
+    showOpts := "w340 h" . SETTINGS_BASE_H   ; 基础高（参数面板1行）；实际高由 ReflowBelow 按当前段收缩（中央593）
     if (settingsOpenPos != "")
         showOpts .= " x" . settingsOpenPos[1] . " y" . settingsOpenPos[2]
     ; 禁用 DWM 窗口过渡动画（DWMWA_TRANSITIONS_FORCEDISABLED=3）：新窗口瞬间不透明显示，
