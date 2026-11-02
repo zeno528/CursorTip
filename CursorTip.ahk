@@ -32,6 +32,7 @@ class Config {
         enableCapsTip: true,
         enableCopyTip: true,
         enableSelectTip: true,
+        autoCopySelection: false,
         showIMEStatus: true,
         capsShowDuration: 800,
         copyShowDuration: 800,
@@ -50,6 +51,7 @@ class Config {
     static enableCapsTip := true
     static enableCopyTip := true
     static enableSelectTip := true
+    static autoCopySelection := false
     static showIMEStatus := true
     static capsShowDuration := 800
     static copyShowDuration := 800
@@ -73,6 +75,9 @@ class Config {
             c.enableCapsTip := IniRead(Config.Path, "Settings", "EnableCapsTip", 1) = 1
             c.enableCopyTip := IniRead(Config.Path, "Settings", "EnableCopyTip", 1) = 1
             c.enableSelectTip := IniRead(Config.Path, "Settings", "EnableSelectTip", 1) = 1
+            c.autoCopySelection := IniRead(Config.Path, "Settings", "AutoCopySelection", 0) = 1
+            if (c.autoCopySelection)
+                c.enableSelectTip := false
             c.showIMEStatus := IniRead(Config.Path, "Settings", "ShowIMEStatus", 1) = 1
 
             c.capsShowDuration := Integer(IniRead(Config.Path, "Settings", "CapsShowDuration", 800))
@@ -102,6 +107,7 @@ class Config {
             IniWrite(c.enableCapsTip ? 1 : 0, Config.Path, "Settings", "EnableCapsTip")
             IniWrite(c.enableCopyTip ? 1 : 0, Config.Path, "Settings", "EnableCopyTip")
             IniWrite(c.enableSelectTip ? 1 : 0, Config.Path, "Settings", "EnableSelectTip")
+            IniWrite(c.autoCopySelection ? 1 : 0, Config.Path, "Settings", "AutoCopySelection")
             IniWrite(c.showIMEStatus ? 1 : 0, Config.Path, "Settings", "ShowIMEStatus")
 
             IniWrite(c.capsShowDuration, Config.Path, "Settings", "CapsShowDuration")
@@ -147,6 +153,7 @@ global L := Map(
         "set_ime", "🌐 显示中/英状态",
         "set_copy", "📋 复制提示",
         "set_select", "🖱 选中文本提示",
+        "set_auto_copy", "选中后自动复制",
         "set_duration", "显示时长",
         "set_caps_label", "大小写提示:",
         "set_copy_label", "复制/选中提示:",
@@ -203,6 +210,7 @@ global L := Map(
         "set_ime", "🌐 Show IME",
         "set_copy", "📋 Copy tip",
         "set_select", "🖱 Selection tip",
+        "set_auto_copy", "Auto-copy selection",
         "set_duration", "Duration",
         "set_caps_label", "CapsLock tip:",
         "set_copy_label", "Copy/Select:",
@@ -269,6 +277,7 @@ DetectLang() {
 global lastCapsState := GetKeyState("CapsLock", "T")
 global lastCapsChangeTime := 0
 global clipboardProcessing := false
+global autoCopySequence := 0
 global shiftAlone := false
 global lShiftHeld := false  ; 左 Shift 物理按住中（用于滤掉长按产生的自动重复帧）
 global rShiftHeld := false  ; 右 Shift 物理按住中
@@ -1380,9 +1389,14 @@ IsImageExt(ext) {
 }
 
 ClipChanged(dataType) {
-    global clipboardProcessing
+    global clipboardProcessing, autoCopySequence
     if (!Config.enableCopyTip || clipboardProcessing)
         return
+
+    if (autoCopySequence && DllCall("GetClipboardSequenceNumber", "uint") = autoCopySequence) {
+        autoCopySequence := 0
+        return
+    }
 
     ; 只响应文本和剪贴板更新事件，忽略其他格式避免同一次复制触发多次
     if (dataType != 1 && dataType != 2)
@@ -1440,7 +1454,7 @@ ClipChanged(dataType) {
 }
 
 ; ============================================================
-; 选中文本计数（UI Automation 直读，不碰剪贴板、不发按键）
+; 选中文本计数与自动复制（UI Automation 直读，不发按键）
 ; ============================================================
 
 ; 读取焦点元素选区的字符数（UTF-16 码元，与复制提示 StrLen 同口径）。
@@ -1449,7 +1463,7 @@ ClipChanged(dataType) {
 ;   IUIAutomation::GetFocusedElement=8 ｜ IUIAutomationElement::GetCurrentPatternAs=14
 ;   IUIAutomationTextPattern::GetSelection=5 ｜ TextRangeArray::get_Length=3, GetElement=4
 ;   IUIAutomationTextRange::GetText=12 ｜ UIA_TextPatternId=10014
-GetSelectionCharCount() {
+GetSelectionCharCount(&selectedText) {
     static uia := 0              ; CUIAutomation 实例，进程内复用
     static IID_TextPattern := 0  ; 二进制 GUID Buffer，供 REFIID 入参复用
     try {
@@ -1495,6 +1509,7 @@ GetSelectionCharCount() {
         arr := ComValue(13, pArr)
         ComCall(3, arr, "int*", &nRanges := 0)                                ; get_Length
         total := 0
+        selectedText := ""
         Loop nRanges {
             ComCall(4, arr, "int", A_Index - 1, "ptr*", &pRange := 0)         ; GetElement
             if (!pRange)
@@ -1502,7 +1517,9 @@ GetSelectionCharCount() {
             rng := ComValue(13, pRange)
             ComCall(12, rng, "int", -1, "ptr*", &pBstr := 0)                  ; GetText(-1)
             if (pBstr) {
-                total += DllCall("oleaut32\SysStringLen", "ptr", pBstr, "int")   ; BSTR 长度前缀 O(1)，不复制文本
+                total += DllCall("oleaut32\SysStringLen", "ptr", pBstr, "int")   ; BSTR 长度前缀 O(1)
+                if (Config.autoCopySelection)
+                    selectedText .= StrGet(pBstr, "UTF-16")
                 DllCall("oleaut32\SysFreeString", "ptr", pBstr)
             }
         }
@@ -1514,12 +1531,27 @@ GetSelectionCharCount() {
 
 ; 选中字数浮标入口：左键/Shift 松开时调用。开关关闭或无选区（折叠光标）不显示
 MaybeShowSelectTip() {
-    if (!Config.enableSelectTip)
+    global autoCopySequence
+    if (!Config.enableSelectTip && !Config.autoCopySelection)
         return
-    n := GetSelectionCharCount()
+    n := GetSelectionCharCount(&selectedText := "")
     if (n > 0) {
-        FileAppend("CursorTip: Selection -> " . n . " chars`n", "work\debug.log")
-        ShowTip(T("select_chars", n), Config.copyShowDuration)
+        if (Config.autoCopySelection && selectedText != "") {
+            copied := false
+            try {
+                Critical("On")
+                A_Clipboard := selectedText
+                autoCopySequence := DllCall("GetClipboardSequenceNumber", "uint")
+                copied := true
+            } catch as e {
+                FileAppend("CursorTip: Auto-copy failed -> " . e.Message . "`n", "work\debug.log")
+            } finally Critical("Off")
+            if (copied)
+                ShowTip(T("copy_chars", n), Config.copyShowDuration)
+        } else if (Config.enableSelectTip && !Config.autoCopySelection) {
+            FileAppend("CursorTip: Selection -> " . n . " chars`n", "work\debug.log")
+            ShowTip(T("select_chars", n), Config.copyShowDuration)
+        }
     }
 }
 
@@ -1557,6 +1589,8 @@ ShowSettings(*) {
 
     g.ctl_startup := g.Add("CheckBox", "x20 y32 w150", T("set_startup"))
     g.ctl_startup.Value := IsStartupEnabled()
+    g.ctl_autoCopy := g.Add("CheckBox", "x200 y32 w140", T("set_auto_copy"))
+    g.ctl_autoCopy.Value := c.autoCopySelection
 
     g.ctl_caps := g.Add("CheckBox", "x20 y57 w130", T("set_caps"))
     g.ctl_caps.Value := c.enableCapsTip
@@ -1568,6 +1602,8 @@ ShowSettings(*) {
     g.ctl_copy.Value := c.enableCopyTip
     g.ctl_select := g.Add("CheckBox", "x200 y82 w140", T("set_select"))
     g.ctl_select.Value := c.enableSelectTip
+    g.ctl_autoCopy.OnEvent("Click", (ctrl, *) => ctrl.Value ? ctrl.Gui.ctl_select.Value := false : 0)
+    g.ctl_select.OnEvent("Click", (ctrl, *) => ctrl.Value ? ctrl.Gui.ctl_autoCopy.Value := false : 0)
 
     g.ctl_caps.OnEvent("Click", (ctrl, *) => ctrl.Gui.ctl_ime.Enabled := ctrl.Value)
 
@@ -1744,6 +1780,7 @@ SnapshotSettings(g) {
         imeEnabled: g.ctl_ime.Enabled,
         copy: g.ctl_copy.Value,
         select: g.ctl_select.Value,
+        autoCopy: g.ctl_autoCopy.Value,
         capsDur: g.ctl_capsDur.Value,
         copyDur: g.ctl_copyDur.Value,
         posSeg: g.ctl_posSeg,
@@ -1767,6 +1804,7 @@ RestoreSettings(g, s) {
     g.ctl_ime.Enabled := s.imeEnabled
     g.ctl_copy.Value := s.copy
     g.ctl_select.Value := s.select
+    g.ctl_autoCopy.Value := s.autoCopy
     g.ctl_capsDur.Value := s.capsDur
     g.ctl_copyDur.Value := s.copyDur
     SetPosSegment(g, s.posSeg)
@@ -2021,6 +2059,7 @@ SettingsReset(ctrl, *) {
     g.ctl_ime.Enabled := d.enableCapsTip
     g.ctl_copy.Value := d.enableCopyTip
     g.ctl_select.Value := d.enableSelectTip
+    g.ctl_autoCopy.Value := d.autoCopySelection
 
     g.ctl_capsDur.Value := d.capsShowDuration
     g.ctl_copyDur.Value := d.copyShowDuration
@@ -2056,6 +2095,7 @@ SyncConfigFromGui(g) {
     c.enableCapsTip := g.ctl_caps.Value
     c.enableCopyTip := g.ctl_copy.Value
     c.enableSelectTip := g.ctl_select.Value
+    c.autoCopySelection := g.ctl_autoCopy.Value
     c.showIMEStatus := g.ctl_ime.Value
 
     c.capsShowDuration := Max(100, Integer(g.ctl_capsDur.Value || 800))
