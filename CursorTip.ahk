@@ -1460,6 +1460,28 @@ GetSelectionCharCount() {
         if (!pElem)
             return -1
         elem := ComValue(13, pElem)                                           ; VT_UNKNOWN，GC 时自动 Release
+        ; Excel 的单元格内编辑器是 CellEdit，而系统焦点落在 EXCEL6 窗口上。
+        if (WinActive("ahk_exe EXCEL.EXE") && WinGetClass("ahk_id " . ControlGetFocus("A")) = "EXCEL6") {
+            value := Buffer(16, 0)
+            NumPut("ushort", 8, value)
+            NumPut("ptr", bstr := DllCall("oleaut32\SysAllocString", "wstr", "CellEdit", "ptr"), value, 8)
+            try {
+                if (A_PtrSize = 8)
+                    ComCall(23, uia, "int", 30011, "ptr", value, "ptr*", &pCondition := 0)
+                else
+                    ComCall(23, uia, "int", 30011, "int64", NumGet(value, 0, "int64"), "int64", NumGet(value, 8, "int64"), "ptr*", &pCondition := 0)
+            } finally DllCall("oleaut32\SysFreeString", "ptr", bstr)
+            condition := ComValue(13, pCondition)
+            ComCall(6, uia, "ptr", WinExist("A"), "ptr*", &pRoot := 0)
+            root := ComValue(13, pRoot)
+            ComCall(5, root, "int", 4, "ptr", condition, "ptr*", &pCellEdit := 0)
+            if (!pCellEdit)
+                return -1
+            elem := ComValue(13, pCellEdit)
+            ComCall(26, elem, "int*", &focused := 0)
+            if (!focused)
+                return -1
+        }
         ComCall(14, elem, "int", 10014, "ptr", IID_TextPattern, "ptr*", &pPat := 0)   ; GetCurrentPatternAs(TextPattern)
         if (!pPat)                                                            ; 焦点元素不支持文本模式
             return -1
