@@ -1575,7 +1575,7 @@ ShowSettings(*) {
 
     g.ctl_startup := g.Add("CheckBox", "x20 y32 w150", T("set_startup"))
     g.ctl_startup.Value := IsStartupEnabled()
-    g.ctl_autoCopy := g.Add("CheckBox", "x200 y32 w140", T("set_auto_copy"))
+    g.ctl_autoCopy := g.Add("CheckBox", "x20 y82 w140", T("set_auto_copy"))
     g.ctl_autoCopy.Value := c.autoCopySelection
 
     g.ctl_caps := g.Add("CheckBox", "x20 y57 w130", T("set_caps"))
@@ -1584,7 +1584,7 @@ ShowSettings(*) {
     g.ctl_ime.Value := c.showIMEStatus
     g.ctl_ime.Enabled := c.enableCapsTip
 
-    g.ctl_copy := g.Add("CheckBox", "x20 y82 w130", T("set_copy"))
+    g.ctl_copy := g.Add("CheckBox", "x200 y32 w130", T("set_copy"))
     g.ctl_copy.Value := c.enableCopyTip
     g.ctl_select := g.Add("CheckBox", "x200 y82 w140", T("set_select"))
     g.ctl_select.Value := c.enableSelectTip
