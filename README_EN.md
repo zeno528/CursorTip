@@ -6,7 +6,7 @@
 
 **A lightweight Windows desktop status indicator** · [Learn more](https://cursortip-website.pages.dev/)
 
-Displays real-time caps lock + IME state and clipboard operation feedback on screen, helping you stay aware of your input environment.
+Shows caps lock and IME state, copy feedback, and selected text counts. Optionally copies selected text automatically.
 
 [![Release](https://img.shields.io/github/v/release/zeno528/CursorTip?style=flat&logo=github&labelColor=1e293b&color=3b82f6)](https://github.com/zeno528/CursorTip/releases)
 [![License](https://img.shields.io/github/license/zeno528/CursorTip?style=flat&labelColor=1e293b&color=3b82f6)](LICENSE)
@@ -26,21 +26,32 @@ English | [简体中文](README.md)
 
 ## Features
 
+These features describe the current repository source; see the corresponding Release for what is included in the latest published version.
+
 | Feature | Trigger | Display |
 |:--------|:--------|:--------|
 | Caps Lock state | CapsLock toggle; or pressing and releasing **Shift alone** | 🔒 CAPS / 🔓 caps |
 | IME state | Shown with caps lock indicator | ZH / EN |
 | Copy feedback | Clipboard content changes | Copied: N char(s) / N image(s) / N file(s) |
+| Selection tip | Select text with the mouse or Shift | Selected: N char(s) |
+| Auto-copy selection | Select text to copy it to the clipboard | Copied: N char(s) |
 
 Tips appear as floating bubbles on screen and auto-dismiss after a few seconds without interrupting your workflow. Position can be **follow mouse / screen top / screen bottom / screen center**, and tips support **light / dark themes** — follow the system automatically or switch manually in Settings.
 
 > **About the Shift trigger**: the tip only fires when Shift is pressed **on its own** — if you press another key, a mouse button, or another modifier while holding Shift, nothing shows on release (so combinations like `Shift+A` don't misfire). That means holding Shift to type won't keep re-triggering the bubble.
 
-## Copy Detection
+## Text Selection and Copying
+
+By default, CursorTip shows the selected character count. To copy selected text automatically, enable **Auto-copy selection** in Settings; it is off by default. It copies **plain text**, replacing the existing clipboard contents, and shows the copied character count on success.
+
+**Selection tip** and **Auto-copy selection** are mutually exclusive: enabling either turns the other off. Both can also be disabled. Selection detection relies on the target app exposing text through Windows UI Automation, so it does not work in every app. In Excel, text can be selected while editing inside a cell; selecting the cell itself is not a text selection. Counts use UTF-16 code units, consistent with copy feedback.
+
+Regular copy feedback supports:
 
 | Copy Method | Detection Result |
 |:------------|:-----------------|
 | Text | N chars |
+| Clipboard image | Image |
 | Image files | N images |
 | Other files | N files |
 
@@ -59,13 +70,13 @@ Right-click the tray icon → Settings → Check "🚀 Run at startup", or place
 
 ## Settings
 
-Right-click the tray icon → Settings. Changes preview live; only **Save** writes them to disk.
+Click the tray icon, or right-click → Settings. Appearance and position changes can be previewed; **Save** applies feature switches and writes the settings to disk.
 
 | Group | Options |
 |:------|:--------|
-| **Features** | Run at startup · Caps lock tip · IME status · Copy tip |
-| **Duration** | Separate duration for caps and copy tips (100–3000 ms) |
-| **Position** | Follow mouse (with top-right / bottom-right) · screen top · screen bottom · screen center, each with an offset slider |
+| **Features** | Run at startup · Caps lock tip · IME status · Copy tip · Selection tip · Auto-copy selection |
+| **Duration** | Separate durations for caps and copy/selection tips (slider range: 100–3000 ms) |
+| **Position** | Follow mouse (above / below) · screen top · screen bottom · screen center; offset is adjustable for mouse, top and bottom |
 | **Appearance** | Follow system / Light / Dark · font size · bold |
 | **Language** | Follow system / 简体中文 / English |
 | **Version** | Version number · Check for updates |
@@ -84,23 +95,22 @@ A few implementation details: checks go through the GitHub Releases Atom feed (n
 
 ## Compilation
 
-Requires [AutoHotkey v2](https://www.autohotkey.com/) and the Ahk2Exe compiler (bundled with the v2 installer).
+Requires [AutoHotkey v2](https://www.autohotkey.com/) and the separately installed Ahk2Exe compiler.
 
-```bash
-"C:\Program Files\AutoHotkey\Compiler\Ahk2Exe.exe" \
-  /in CursorTip.ahk \
-  /out CursorTip_v1.3.8.exe \
+```powershell
+& "C:\Program Files\AutoHotkey\Compiler\Ahk2Exe.exe" `
+  /in CursorTip.ahk `
+  /out CursorTip_v1.5.0.exe `
   /base "C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe"
 ```
 
 The script embeds the `;@Ahk2Exe-SetMainIcon` directive to set the icon, so no `/icon` parameter is needed.
 
-The version number lives only in `VERSION.ahk`; changing it triggers GitHub Actions to compile and open a Draft Release (changelog extracted from git history — review, then publish).
+The version number lives in `VERSION.ahk`. Pushing a change to that file to `main` triggers GitHub Actions to compile and create a Draft Release. The changelog is extracted from commit titles affecting `CursorTip.ahk` since the previous tag; review and publish the draft to make it a release.
 
 ## System Requirements
 
 - Windows 10 / 11
-- Light memory footprint (~2.6 MB resident)
 
 ## Project Structure
 
