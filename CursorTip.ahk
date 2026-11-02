@@ -180,7 +180,7 @@ global L := Map(
         "msg_saved", "设置已保存",
         "err_save_config", "保存配置失败：",
         "err_set_startup", "设置开机启动失败：",
-        "link_about", "官网",
+        "link_about", "更新日志",
         "about_title", "版本",
         "btn_check_update", "检查更新",
         "btn_upgrade", "立即升级",
@@ -237,7 +237,7 @@ global L := Map(
         "msg_saved", "Settings saved",
         "err_save_config", "Failed to save config: ",
         "err_set_startup", "Failed to set startup: ",
-        "link_about", "Website",
+        "link_about", "Changelog",
         "about_title", "Version",
         "btn_check_update", "Check",
         "btn_upgrade", "Upgrade",
@@ -378,13 +378,12 @@ if (A_IsCompiled && A_Args.Length >= 3 && A_Args[1] = "--update-apply") {
         }
         if (moveOk && dest != applyTarget)
             try FileDelete(applyTarget)  ; 清理旧版本文件；被占用则留给用户手动删
-        ; 升级器 CWD 在 %TEMP%，日志必须写绝对路径；新实例启动会清空日志，
-        ; 这行只在「新实例没起来」的故障场景下留存可见
-        try FileAppend("CursorTip: Update -> apply " . (moveOk ? "ok (relaunched " . dest . ")" : "fail (move retry exhausted, relaunched old)") . " at " . A_Now . "`n", tgtDir . "\work\debug.log")
-        Run('"' . dest . '"', tgtDir)  ; 工作目录=安装目录，新实例的相对路径 work\debug.log 才落对位置
+        if (!moveOk)
+            ErrorLog("Update: apply failed (move retry exhausted)", tgtDir)
+        Run('"' . dest . '"', tgtDir)
     } catch as e {
         ; 任何意外都把旧版拉起来：旧 exe 全程未动，完整可用（不留坏状态）
-        try FileAppend("CursorTip: Update -> apply error (" . e.Message . ", relaunched old) at " . A_Now . "`n", (tgtDir != "" ? tgtDir : A_Temp) . "\work\debug.log")
+        ErrorLog("Update: apply error (" . e.Message . ")", tgtDir != "" ? tgtDir : A_Temp)
         try if (applyTarget != "")
             Run('"' . applyTarget . '"', tgtDir)
     }
@@ -398,12 +397,6 @@ if (g_singleInstanceMutex && A_LastError = 183)  ; ERROR_ALREADY_EXISTS = 已有
 A_IconHidden := false  ; 守卫通过，亮出托盘图标（配合 #NoTrayIcon，后来者从未建过图标）
 
 Config.Load()
-; 调试日志：每次启动清空，AI 通过读 work/debug.log 调试
-try {
-    DirCreate("work")
-    FileDelete("work\debug.log")
-    FileAppend("CursorTip: started at " . A_Now . "`n", "work\debug.log")
-}
 curLang := (Config.language = "auto") ? DetectLang() : Config.language
 BuildTrayMenu()
 InitMonitors()
@@ -511,9 +504,19 @@ SetStartup(enable) {
 ; HTTP 引擎统一 System32\curl.exe：隐藏 Run + SetTimer 轮询 ProcessExist，不用任何阻塞调用
 ; （AHK 单线程伪线程，Download()/同步 COM 会冻住全部热键）；超时墙防 PID 复用导致轮询永真。
 
-; 更新日志（失败静默：任何写日志异常吞掉，绝不打扰用户）
-UpdLog(msg) {
-    try FileAppend("CursorTip: Update -> " . msg . "`n", "work\debug.log")
+; 只在出错时创建日志，写满 64 KiB 后从最新错误重新记录。
+ErrorLog(msg, baseDir := "") {
+    try {
+        if (baseDir = "")
+            baseDir := A_ScriptDir
+        dir := baseDir . "\work"
+        path := dir . "\debug.log"
+        line := A_Now . " " . SubStr(msg, 1, 1024) . "`n"
+        DirCreate(dir)
+        if (FileExist(path) && FileGetSize(path) + StrPut(line, "UTF-8") - 1 > 65536)
+            FileDelete(path)
+        FileAppend(line, path, "UTF-8-RAW")
+    }
 }
 
 ; 开机自启路径自愈：exe 被改名/移动（升级换版本文件名是典型）后注册表旧路径已失效，
@@ -627,7 +630,6 @@ CheckUpdateSilent(*) {
         hours := 999
         try hours := DateDiff(A_Now, last, "h")
         if (hours < 24) {
-            UpdLog("check skip (last=" . last . ")")
             return
         }
     }
@@ -651,7 +653,7 @@ StartUpdateCheck(mode) {
     if (g_updateState = "checking" || g_updateState = "downloading")
         return
     if !CurlAvailable() {
-        UpdLog("check fail (no_curl)")
+        ErrorLog("Update: check failed (no curl)")
         if (mode = "manual")
             Run("https://github.com/zeno528/CursorTip/releases/latest")
         return
@@ -664,7 +666,6 @@ StartUpdateCheck(mode) {
     Run('"' . A_WinDir . '\System32\curl.exe" -sfL' . SysProxyArg() . ' --max-time 15 -o "' . UPD_TEMP_JSON . '" "' . UPD_API . '"', A_Temp, "Hide", &g_curlPid)
     g_curlStart := A_TickCount
     SetTimer(UpdatePoll, 250)
-    UpdLog("check start (mode=" . mode . ", ver=" . VERSION . ")")
     ApplyUpdateUI()
 }
 
@@ -673,6 +674,7 @@ StartUpdateDownload() {
     global g_updateState, g_curlPid, g_curlMode, g_curlStart, g_updateLatestVer, UPD_TEMP_EXE
     if !CurlAvailable() {
         g_updateState := "failed"
+        ErrorLog("Update: download failed (no curl)")
         ApplyUpdateUI()
         return
     }
@@ -683,7 +685,6 @@ StartUpdateDownload() {
     Run('"' . A_WinDir . '\System32\curl.exe" -sfSL' . SysProxyArg() . ' --max-time 120 -o "' . UPD_TEMP_EXE . '" "' . url . '"', A_Temp, "Hide", &g_curlPid)
     g_curlStart := A_TickCount
     SetTimer(UpdatePoll, 250)
-    UpdLog("download start " . url)
     ApplyUpdateUI()
 }
 
@@ -724,13 +725,13 @@ FinishUpdateCheck() {
     try FileDelete(UPD_TEMP_JSON)
     if !RegExMatch(json, "releases/tag/v?([\d.]+)", &m) {
         g_updateState := "failed"
-        UpdLog("check fail (parse)")
+        ErrorLog("Update: check failed (parse)")
         return
     }
     if !RegExMatch(m[1], "^\d+\.\d+\.\d+$") {
         ; tag 不是 semver（如 GitHub 草稿占位符 untagged-*）：Release 数据坏了，明示失败而非当最新版
         g_updateState := "failed"
-        UpdLog("check fail (bad tag=" . m[1] . ")")
+        ErrorLog("Update: check failed (bad tag=" . m[1] . ")")
         return
     }
     g_updateLatestVer := m[1]
@@ -739,11 +740,9 @@ FinishUpdateCheck() {
         try IniWrite(m[1], Config.Path, "Settings", "LastUpdateVer")
         if (g_checkSilent)
             TrayTip(T("upd_new", m[1]), "CursorTip")
-        UpdLog("check ok latest=" . m[1] . " (new)")
     } else {
         g_updateState := "uptodate"
         try IniDelete(Config.Path, "Settings", "LastUpdateVer")
-        UpdLog("check ok latest=" . m[1] . " (same)")
     }
 }
 
@@ -761,10 +760,9 @@ FinishUpdateDownload() {
     if (size < 500000 || magic != "MZ") {
         try FileDelete(UPD_TEMP_EXE)
         g_updateState := "failed"
-        UpdLog("download fail (invalid, size=" . size . ")")
+        ErrorLog("Update: download failed (invalid, size=" . size . ")")
         return
     }
-    UpdLog("download ok (" . size . " bytes)")
     ApplyUpgrade()
 }
 
@@ -776,7 +774,6 @@ ApplyUpgrade() {
     oldPid := ProcessExist()  ; 无参 = 自身 PID
     upPid := 0
     Run('"' . UPD_TEMP_EXE . '" --update-apply "' . target . '" ' . oldPid, A_Temp, "Hide", &upPid)
-    UpdLog("apply spawn target=" . target . " oldpid=" . oldPid)
     alive := false
     loop 5 {
         Sleep(300)
@@ -788,7 +785,7 @@ ApplyUpgrade() {
     if !alive {
         g_updateState := "failed"
         try FileDelete(UPD_TEMP_EXE)
-        UpdLog("apply spawn died")
+        ErrorLog("Update: apply process exited early")
         ApplyUpdateUI()
         return
     }
@@ -857,7 +854,6 @@ ShowTipAt(gw, gh) {
 ShowTip(text, duration := 0, fixedWidth := false) {
     global tipGui, tipGuiText, tipFixedWidth, tipFixedHeight, tipGuiIsFixed, tipBuiltTheme, tipAlpha, tipFadeGen
     c := Config
-    FileAppend("CursorTip: ShowTip text='" . text . "' dur=" . duration . " fixed=" . fixedWidth . "`n", "work\debug.log")
 
     ; 涉及窗口句柄和定时器，防止 timer/热键重入导致状态错乱
     Critical
@@ -1062,7 +1058,6 @@ GetIMEStatus(forceRefresh := false) {
     }
 
     result := ""
-    method := ""
     hWnd := 0
 
     try {
@@ -1072,12 +1067,10 @@ GetIMEStatus(forceRefresh := false) {
 
         ; 方法1: ImmGetConversionStatus（最可靠，标准 IME 接口）
         result := DetectIMEViaConversionStatus(hWnd)
-        method := "Conversion"
 
         ; 方法2: 回退到 ImmGetDefaultIMEWnd + SendMessage
         if (result = "") {
             result := DetectIMEViaMessage(hWnd)
-            method := "Message"
         }
     } catch as e {
     }
@@ -1085,7 +1078,6 @@ GetIMEStatus(forceRefresh := false) {
     if (result != "") {
         lastResult := result
         lastWindowHash := hWnd
-        FileAppend("CursorTip: IME -> " . result . " (method=" . method . ")`n", "work\debug.log")
     }
 
     lastCheckTime := A_TickCount
@@ -1148,7 +1140,6 @@ CheckCapsLock() {
     if (current != lastCapsState) {
         lastCapsState := current
         lastCapsChangeTime := A_TickCount
-        FileAppend("CursorTip: CapsLock -> " . (current ? "ON" : "OFF") . "`n", "work\debug.log")
         ShowCapsStatus()
     }
 }
@@ -1428,21 +1419,17 @@ ClipChanged(dataType) {
                     }
                 }
                 if (allImages) {
-                    FileAppend("CursorTip: Clipboard -> " . count . " image-file(s)`n", "work\debug.log")
                     ShowTip(T("copy_image_files", count), Config.copyShowDuration)
                 } else {
-                    FileAppend("CursorTip: Clipboard -> " . count . " file(s)`n", "work\debug.log")
                     ShowTip(T("copy_files", count), Config.copyShowDuration)
                 }
             }
         } else if (isImage) {
-            FileAppend("CursorTip: Clipboard -> image`n", "work\debug.log")
             ShowTip(T("copy_image"), Config.copyShowDuration)
         } else {
             clipText := A_Clipboard
             length := StrLen(clipText)
             if (length > 0) {
-                FileAppend("CursorTip: Clipboard -> " . length . " chars`n", "work\debug.log")
                 ShowTip(T("copy_chars", length), Config.copyShowDuration)
             }
         }
@@ -1544,12 +1531,11 @@ MaybeShowSelectTip() {
                 autoCopySequence := DllCall("GetClipboardSequenceNumber", "uint")
                 copied := true
             } catch as e {
-                FileAppend("CursorTip: Auto-copy failed -> " . e.Message . "`n", "work\debug.log")
+                ErrorLog("Auto-copy failed: " . e.Message)
             } finally Critical("Off")
             if (copied)
                 ShowTip(T("copy_chars", n), Config.copyShowDuration)
         } else if (Config.enableSelectTip && !Config.autoCopySelection) {
-            FileAppend("CursorTip: Selection -> " . n . " chars`n", "work\debug.log")
             ShowTip(T("select_chars", n), Config.copyShowDuration)
         }
     }
@@ -1711,9 +1697,9 @@ ShowSettings(*) {
     TrackBelow(g, g.Add("Button", "x240 y553 w80 Default", T("btn_save"))).OnEvent("Click", SettingsSave)
     g.OnEvent("Close", SettingsClose)
 
-    ; 底部信息（官网）
+    ; 底部信息（更新日志）
     icoPath := A_Temp . "\CursorTip_site.ico"
-    FileInstall("assets\app.ico", icoPath, 1)
+    FileInstall("assets\github.ico", icoPath, 1)
     TrackBelow(g, g.Add("Picture", "x20 y593 w16 h16", icoPath)).OnEvent("Click", (*) => Run("https://cursortip-website.pages.dev/"))
     g.SetFont("s8", "Microsoft YaHei")
     TrackBelow(g, g.Add("Link", "x40 y595", '<a href="https://cursortip-website.pages.dev/">' . T("link_about") . '</a>'))
