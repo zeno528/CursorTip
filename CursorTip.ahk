@@ -853,8 +853,11 @@ ShowTip(text, duration := 0, fixedWidth := false) {
     ; 涉及窗口句柄和定时器，防止 timer/热键重入导致状态错乱
     Critical
     try {
-        tipFadeGen++   ; 作废在途淡入/淡出：新一轮显示自带最新一代（快速切换不闪烁的关键）
         winValid := IsObject(tipGui) ? DllCall("IsWindow", "Ptr", tipGui.Hwnd) : 0
+        if (winValid && IsObject(tipGuiText) && tipGuiIsFixed = fixedWidth
+            && DllCall("IsWindowVisible", "Ptr", tipGui.Hwnd) && tipGuiText.Value == text)
+            return
+        tipFadeGen++   ; 作废在途淡入/淡出：新一轮显示自带最新一代（快速切换不闪烁的关键）
 
         ; 仅固定宽度模式（Caps/IME 提示）复用窗口：控件宽度恒定，只改 .Value 即可，
         ; 无需 Destroy/Create，杜绝切换时的空帧闪烁。
