@@ -1522,6 +1522,17 @@ MaybeShowSelectTip() {
     if (!Config.enableSelectTip && !Config.autoCopySelection)
         return
     n := GetSelectionCharCount(&selectedText := "")
+    if (n <= 0 && Config.enableSelectTip && !Config.autoCopySelection
+        && WinActive("ahk_class OpusApp ahk_exe wps.exe")) {
+        try {
+            ; shortcut: 多个 WPS 文字窗口时无法确认 COM 对象对应前台窗口，需窗口级关联后再支持。
+            if (WinGetList("ahk_class OpusApp ahk_exe wps.exe").Length = 1) {
+                selection := ComObjActive("kwps.Application").Selection
+                if (selection.Active && selection.Start < selection.End)
+                    n := StrLen(selection.Text)
+            }
+        }
+    }
     if (n > 0) {
         if (Config.autoCopySelection && selectedText != "") {
             copied := false
