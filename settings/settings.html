@@ -29,8 +29,8 @@ button, select, input { border-radius: 7px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
 [hidden] { display: none !important; }
 svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
-.shell { height: 100dvh; display: grid; grid-template: minmax(0, 1fr) / 122px minmax(0, 1fr); }
-.sidebar { background: var(--rail); border-right: 1px solid var(--line); padding: 15px 8px 11px; display: flex; flex-direction: column; min-height: 0; }
+.shell { height: 100dvh; display: grid; grid-template: minmax(0, 1fr) / 122px minmax(0, 1fr); background: var(--rail); }
+.sidebar { padding: 15px 8px 11px; display: flex; flex-direction: column; min-height: 0; }
 .brand { display: flex; gap: 5px; align-items: center; margin: 0 3px 17px; }
 .brand-mark { display: block; width: 31px; height: 31px; flex: none; }
 .wordmark { font-size: 15px; font-weight: 730; letter-spacing: -.035em; }
@@ -42,7 +42,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .version { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .update-pill { flex: 1; min-width: 0; max-width: 62px; border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 13%, var(--rail)); color: var(--accent); padding: 3px 4px; font-size: 11px; font-weight: 650; white-space: nowrap; }
 .update-pill:hover:enabled { background: color-mix(in srgb, var(--accent) 21%, var(--rail)); border-color: var(--accent); }
-.content { display: grid; grid-template-rows: minmax(0, 1fr); min-width: 0; }
+.content { display: grid; grid-template-rows: minmax(0, 1fr); min-width: 0; background: var(--paper); border-left: 1px solid var(--line); border-radius: 14px 0 0 14px; overflow: clip; }
 .page { overflow: auto; padding: 15px 13px 12px 18px; }
 .page::-webkit-scrollbar { display: none; }
 .panel { margin-inline: auto; max-width: 660px; }
@@ -64,6 +64,10 @@ h2 { font-size: 12px; margin: 13px 0 5px; color: var(--muted); font-weight: 650;
 .switch:checked::before { left: 17px; background: var(--accent-ink); }
 .switch:disabled { cursor: default; }
 select { background: var(--paper); border: 1px solid var(--line); padding: 5px 8px; max-width: 100%; }
+@supports selector(select:open) {
+  select[data-pointer-focus] { outline: none; }
+  select:open { outline: 2px solid var(--accent); outline-offset: 0; }
+}
 .row select { min-width: 130px; }
 .stepper { display: inline-flex; align-items: stretch; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); }
 .stepper button { border: 0; border-radius: 5px; background: transparent; width: 26px; min-height: 29px; display: grid; place-items: center; color: var(--muted); }
@@ -381,7 +385,16 @@ document.addEventListener('input', ({target}) => {
 document.addEventListener('change', ({target}) => {
   if (target.type === 'number') commitNumber(target);
 });
+document.addEventListener('pointerdown', ({target, button}) => {
+  if (button !== 0) return;
+  const control = target.closest('select') || target.closest('label')?.querySelector('select');
+  control?.setAttribute('data-pointer-focus', '');
+});
+document.addEventListener('focusout', ({target}) => {
+  if (target.matches('select')) target.removeAttribute('data-pointer-focus');
+});
 document.addEventListener('keydown', event => {
+  if (event.target.matches('select')) event.target.removeAttribute('data-pointer-focus');
   if (event.key === 'Escape') { closeSettings(); return; }
   if (event.key === 'Enter' && event.target.type === 'number') commitNumber(event.target);
   const tab = event.target.closest('[role="tab"]');

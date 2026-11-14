@@ -23,3 +23,4 @@ CLAUDE.md
 
 # 暂时停用的 workflow（文件保留在工作区，以后可能重新启用）
 .github/workflows/mirror-to-r2.yml
+AGENTS.md
