@@ -1723,10 +1723,11 @@ ShowSettings(*) {
 
     TrackBelow(g, g.Add("Text", "x10 y498 w320 h1 BackgroundDDDDDD"))
 
-    ; === 版本（版本号 + 检查更新，同一行基线对齐）===
+    ; === 版本 ===
     g.SetFont("Bold")
-    TrackBelow(g, g.Add("Text", "x20 y512", T("about_title") . " (v" . VERSION . ")"))
+    TrackBelow(g, g.Add("Text", "x20 y512", T("about_title")))
     g.SetFont("Norm")
+    TrackBelow(g, g.Add("Text", "x+8 y513", "v" . VERSION)).SetFont("s9 c666666")
     g.ctl_updStatus := TrackBelow(g, g.Add("Text", "x130 y512 w114", ""))   ; w114 容纳「发现新版本 v1.3.1」不裁字
     g.ctl_updBtn := TrackBelow(g, g.Add("Button", "x244 y510 w76 h24", T("btn_check_update")))
     g.ctl_updBtn.OnEvent("Click", OnUpdateButtonClick)
