@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>CursorTip Settings</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --ink: #202124; --muted: #5e6067; --rail: #f2f2f3; --paper: #fafafa;
+  --card: #fff; --line: #dedee2; --accent: #245dbe; --accent-ink: #fff;
+  --tint: #ebedf0; --canvas: #f0f0f2; --danger: #a02d43;
+  font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f1f1f3; --muted: #b1b2b9; --rail: #1b1b1d; --paper: #212123;
+    --card: #27272a; --line: #3c3c41; --accent: #a7c7ff; --accent-ink: #122746;
+    --tint: #353539; --canvas: #1c1c1f; --danger: #ffb3bd;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); }
+button, input, select { font: inherit; color: inherit; }
+button, select { cursor: pointer; }
+button:disabled { cursor: default; opacity: .47; }
+button, select, input { border-radius: 7px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+[hidden] { display: none !important; }
+svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.shell { height: 100dvh; display: grid; grid-template: minmax(0, 1fr) / 122px minmax(0, 1fr); }
+.sidebar { background: var(--rail); border-right: 1px solid var(--line); padding: 15px 8px 11px; display: flex; flex-direction: column; min-height: 0; }
+.brand { display: flex; gap: 5px; align-items: center; margin: 0 3px 17px; }
+.brand-mark { display: block; width: 31px; height: 31px; flex: none; }
+.wordmark { font-size: 15px; font-weight: 730; letter-spacing: -.035em; }
+.tabs { display: grid; gap: 4px; }
+.tab { display: flex; gap: 7px; align-items: center; padding: 8px; width: 100%; text-align: left; color: var(--muted); border: 0; background: transparent; font-size: 13px; }
+.tab:hover { color: var(--ink); background: var(--paper); }
+.tab[aria-selected="true"] { background: var(--tint); color: var(--accent); font-weight: 650; }
+.sidebar-footer { margin-top: auto; padding: 18px 4px 0; display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 43px; }
+.version { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.update-pill { flex: 1; min-width: 0; max-width: 62px; border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 13%, var(--rail)); color: var(--accent); padding: 3px 4px; font-size: 11px; font-weight: 650; white-space: nowrap; }
+.update-pill:hover:enabled { background: color-mix(in srgb, var(--accent) 21%, var(--rail)); border-color: var(--accent); }
+.content { display: grid; grid-template-rows: minmax(0, 1fr); min-width: 0; }
+.page { overflow: auto; padding: 15px 13px 12px 18px; }
+.page::-webkit-scrollbar { display: none; }
+.panel { margin-inline: auto; max-width: 660px; }
+h1 { font-size: 23px; line-height: 1.2; margin: 0; letter-spacing: -.025em; font-weight: 700; }
+.panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+h2 { font-size: 12px; margin: 13px 0 5px; color: var(--muted); font-weight: 650; }
+.card { border: 1px solid var(--line); border-radius: 9px; background: var(--card); }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 6px 10px; min-height: 39px; }
+.card > * + * { border-top: 1px solid var(--line); }
+.name { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
+.name svg { color: var(--muted); width: 16px; height: 16px; }
+.row.child { position: relative; padding-left: 35px; min-height: 33px; color: var(--muted); }
+.row.child::before { content: ""; position: absolute; inset: 0 auto 50% 17px; width: 10px; border: solid var(--muted); border-width: 0 0 1px 1px; border-bottom-left-radius: 4px; opacity: .55; }
+.row.child:has(:disabled) { opacity: .6; }
+.field { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.switch { appearance: none; flex: 0 0 auto; width: 34px; height: 20px; border: 1px solid var(--muted); border-radius: 20px; background: var(--rail); margin: 0; cursor: pointer; position: relative; }
+.switch::before { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); left: 3px; top: 3px; }
+.switch:checked { background: var(--accent); border-color: var(--accent); }
+.switch:checked::before { left: 17px; background: var(--accent-ink); }
+.switch:disabled { cursor: default; }
+select { background: var(--paper); border: 1px solid var(--line); padding: 5px 8px; max-width: 100%; }
+.row select { min-width: 130px; }
+.stepper { display: inline-flex; align-items: stretch; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); }
+.stepper button { border: 0; border-radius: 5px; background: transparent; width: 26px; min-height: 29px; display: grid; place-items: center; color: var(--muted); }
+.stepper button svg { width: 13px; height: 13px; }
+.stepper button:hover:enabled, .quiet:hover:enabled { background: var(--tint); color: var(--ink); }
+input[type=number] { appearance: textfield; -moz-appearance: textfield; background: var(--paper); border: 1px solid var(--line); padding: 4px 7px; width: 78px; text-align: right; font-variant-numeric: tabular-nums; }
+input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.stepper input { border: 0; border-radius: 0; border-inline: 1px solid var(--line); background: transparent; width: 47px; text-align: center; padding-inline: 2px; }
+.stepper:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+.stepper input:focus-visible { outline: none; }
+.stepper button:focus-visible { outline-offset: -2px; }
+.field[data-unit="ms"] .stepper input { width: 78px; }
+.unit { color: var(--muted); font-size: 12px; min-width: 18px; }
+.quiet, .btn { background: transparent; border: 1px solid var(--line); padding: 5px 9px; min-height: 30px; white-space: nowrap; }
+.quiet { border-color: transparent; color: var(--muted); }
+.btn:hover:enabled { border-color: var(--accent); }
+.segments { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; padding: 5px; margin-bottom: 10px; background: var(--rail); border: 1px solid var(--line); border-radius: 10px; }
+.segments label { cursor: pointer; position: relative; display: grid; }
+.segments input { position: absolute; opacity: 0; }
+.segments label > span { display: grid; grid-template-rows: 18px 1fr; justify-items: center; align-items: center; gap: 5px; padding: 8px 3px; border-radius: 6px; color: var(--muted); text-align: center; font-size: 13px; font-weight: 600; }
+.segments input:checked + span { background: var(--card); color: var(--accent); box-shadow: 0 1px 2px #0002; }
+.segments input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sample { position: relative; overflow: hidden; background: var(--canvas); border: 1px solid var(--line); border-radius: 9px; min-height: 104px; display: grid; place-items: center; }
+.sample::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(var(--muted) .65px, transparent .8px); background-size: 12px 12px; opacity: .24; }
+.bubble { position: relative; max-width: 95%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #f5f5f5; color: #333; border-radius: 8px; padding: 4px 11px; box-shadow: 0 3px 12px #0002; font-family: "Microsoft YaHei", sans-serif; }
+.bubble.dark { color: #fff; background: #333; }
+.preview-row { display: flex; justify-content: flex-end; margin-top: 8px; }
+.status { max-width: 660px; margin: 0 auto 10px; font-size: 12px; color: var(--danger); }
+.status:empty { display: none; }
+.updates { color: var(--muted); font-size: 12px; display: block; }
+.github-mark { display: block; border-radius: 4px; background: #fff; padding: 2px; }
+.credits { color: var(--muted); font-size: 12px; }
+@media (max-width: 465px) {
+  .shell { grid-template-columns: 110px minmax(0, 1fr); }
+  .sidebar { padding-inline: 8px; }
+  .sidebar-footer { padding-inline: 0; }
+  .brand { margin-inline: 2px; gap: 5px; }
+  .brand-mark { width: 26px; height: 26px; }
+  .wordmark { font-size: 14px; }
+  .tab { padding-inline: 6px; gap: 5px; font-size: 12px; }
+  .page { padding: 20px 12px 12px; }
+  .row { flex-wrap: wrap; gap: 6px; }
+  .row .field, .row > select { margin-left: auto; }
+  .segments label > span { font-size: 12px; }
+}
+@media (forced-colors: active) {
+  .switch { appearance: auto; }
+  .switch::before { display: none; }
+  .tab[aria-selected="true"], .segments input:checked + span { outline: 1px solid Highlight; }
+}
+</style>
+</head>
+<body>
+<svg hidden xmlns="http://www.w3.org/2000/svg">
+  <symbol id="cursor" viewBox="0 0 24 24"><path d="m5 3 14 10-7 1-3 7z"/><path d="m12 14 4 6"/></symbol>
+  <symbol id="sliders" viewBox="0 0 24 24"><path d="M4 7h6m4 0h6M4 17h10m4 0h2"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="17" r="2"/></symbol>
+  <symbol id="screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="3"/><path d="M8 21h8"/></symbol>
+  <symbol id="type" viewBox="0 0 24 24"><path d="M4 19 10 5l6 14M6 15h8m4-3h3m-1.5 0v7"/></symbol>
+  <symbol id="language" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></symbol>
+  <symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></symbol>
+  <symbol id="power" viewBox="0 0 24 24"><path d="M12 3v9m-6-6a8 8 0 1 0 12 0"/></symbol>
+  <symbol id="copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="select" viewBox="0 0 24 24"><path d="M4 8V5h3m10 0h3v3m0 8v3h-3M7 19H4v-3m4-4h8m-4-4v8"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M5 12h14m-7-7v14"/></symbol>
+  <symbol id="minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="top" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 9h8"/></symbol>
+  <symbol id="bottom" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 15h8"/></symbol>
+  <symbol id="center" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 12h8"/></symbol>
+</svg>
+<main class="shell" id="app" hidden>
+  <aside class="sidebar">
+    <div class="brand"><img class="brand-mark" src="data:image/png;base64,{{LOGO_PNG}}" alt="" width="31" height="31"><span class="wordmark">CursorTip</span></div>
+    <nav class="tabs" role="tablist" aria-orientation="vertical" aria-label="Settings">
+      <button id="tab-general" class="tab" role="tab" aria-controls="general" aria-selected="true"><svg aria-hidden="true"><use href="#sliders"/></svg><span data-i="general"></span></button>
+      <button id="tab-look" class="tab" role="tab" aria-controls="look" aria-selected="false" tabindex="-1"><svg aria-hidden="true"><use href="#type"/></svg><span data-i="look"></span></button>
+      <button id="tab-position" class="tab" role="tab" aria-controls="position" aria-selected="false" tabindex="-1"><svg aria-hidden="true"><use href="#screen"/></svg><span data-i="position"></span></button>
+      <button id="tab-about" class="tab" role="tab" aria-controls="about" aria-selected="false" tabindex="-1"><svg aria-hidden="true"><use href="#info"/></svg><span data-i="about"></span></button>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="version" id="version"></span>
+      <button type="button" class="update-pill" id="sidebar-update" data-action="check" hidden></button>
+    </div>
+  </aside>
+  <section class="content">
+    <div class="page">
+      <p id="error" class="status" role="alert"></p>
+      <section id="general" class="panel" role="tabpanel" aria-labelledby="tab-general">
+        <div class="panel-heading">
+          <h1 data-i="general"></h1>
+          <button type="button" class="btn" data-action="reset" data-i="reset"></button>
+        </div>
+        <h2 data-i="behavior"></h2>
+        <div class="card">
+          <label class="row"><span class="name"><svg aria-hidden="true"><use href="#power"/></svg><span data-i="startup"></span></span><input type="checkbox" role="switch" class="switch" data-key="startup"></label>
+          <div role="group" aria-labelledby="caps-title">
+            <label class="row"><span class="name"><svg aria-hidden="true"><use href="#type"/></svg><span id="caps-title" data-i="caps"></span></span><input type="checkbox" role="switch" class="switch" data-key="caps"></label>
+            <label class="row child"><span class="name"><svg aria-hidden="true"><use href="#language"/></svg><span data-i="ime"></span></span><input type="checkbox" role="switch" class="switch" data-key="ime"></label>
+          </div>
+          <label class="row"><span class="name"><svg aria-hidden="true"><use href="#copy"/></svg><span data-i="copy"></span></span><input type="checkbox" role="switch" class="switch" data-key="copy"></label>
+          <label class="row"><span class="name"><svg aria-hidden="true"><use href="#select"/></svg><span data-i="selection"></span></span><select data-key="selection"><option value="1" data-i="count"></option><option value="2" data-i="autoCopy"></option><option value="3" data-i="off"></option></select></label>
+        </div>
+        <h2 data-i="duration"></h2>
+        <div class="card">
+          <div class="row"><span id="label-caps-ms" data-i="caps"></span><div class="field" data-number="capsMs" data-for="label-caps-ms" data-min="100" data-max="2147483647" data-step="100" data-unit="ms"></div></div>
+          <div class="row"><span id="label-copy-ms" data-i="copySelection"></span><div class="field" data-number="copyMs" data-for="label-copy-ms" data-min="100" data-max="2147483647" data-step="100" data-unit="ms"></div></div>
+        </div>
+        <h2 data-i="interface"></h2>
+        <div class="card">
+          <label class="row"><span class="name"><svg aria-hidden="true"><use href="#language"/></svg><span data-i="language"></span></span><select data-key="language"><option value="auto" data-i="system"></option><option value="zh">简体中文</option><option value="en">English</option></select></label>
+        </div>
+      </section>
+      <section id="position" class="panel" role="tabpanel" aria-labelledby="tab-position" hidden>
+        <div class="panel-heading">
+          <h1 data-i="position"></h1>
+          <button type="button" class="btn" data-action="reset" data-i="reset"></button>
+        </div>
+        <h2 data-i="placement"></h2>
+        <div class="segments" role="radiogroup" data-label="placement">
+          <label><input type="radio" name="position" data-key="position" value="1"><span><svg aria-hidden="true"><use href="#cursor"/></svg><span data-i="mouse"></span></span></label>
+          <label><input type="radio" name="position" data-key="position" value="3"><span><svg aria-hidden="true"><use href="#top"/></svg><span data-i="top"></span></span></label>
+          <label><input type="radio" name="position" data-key="position" value="4"><span><svg aria-hidden="true"><use href="#bottom"/></svg><span data-i="bottom"></span></span></label>
+          <label><input type="radio" name="position" data-key="position" value="2"><span><svg aria-hidden="true"><use href="#center"/></svg><span data-i="center"></span></span></label>
+        </div>
+        <div class="card" id="position-fields">
+          <div class="row" data-position="1"><span id="label-mouse" data-i="mouseOffset"></span><div class="field" data-number="mouseOffset" data-for="label-mouse" data-max="100" data-step="5" data-unit="px"></div></div>
+          <label class="row" data-position="1"><span data-i="mouseSide"></span><select data-key="mouseAbove"><option value="0" data-i="below"></option><option value="1" data-i="above"></option></select></label>
+          <div class="row" data-position="3"><span id="label-top" data-i="topOffset"></span><div class="field" data-number="topOffset" data-for="label-top" data-max="500" data-step="10" data-unit="px"></div></div>
+          <div class="row" data-position="4"><span id="label-bottom" data-i="bottomOffset"></span><div class="field" data-number="bottomOffset" data-for="label-bottom" data-max="500" data-step="10" data-unit="px"></div></div>
+        </div>
+        <div class="preview-row"><button type="button" class="btn" data-action="preview" data-i="preview"></button></div>
+      </section>
+      <section id="look" class="panel" role="tabpanel" aria-labelledby="tab-look" hidden>
+        <div class="panel-heading">
+          <h1 data-i="look"></h1>
+          <button type="button" class="btn" data-action="reset" data-i="reset"></button>
+        </div>
+        <h2 data-i="tipStyle"></h2>
+        <div class="card">
+          <label class="row"><span data-i="theme"></span><select data-key="theme"><option value="auto" data-i="system"></option><option value="light" data-i="light"></option><option value="dark" data-i="dark"></option></select></label>
+          <div class="row"><span id="label-size" data-i="fontSize"></span><div class="field" data-number="fontSize" data-for="label-size" data-min="8" data-max="72" data-step="1" data-unit="pt"></div></div>
+          <label class="row"><span data-i="bold"></span><input type="checkbox" role="switch" class="switch" data-key="bold"></label>
+        </div>
+        <h2 data-i="sampleTitle"></h2>
+        <div class="sample"><output id="sample" class="bubble"></output></div>
+      </section>
+      <section id="about" class="panel" role="tabpanel" aria-labelledby="tab-about" hidden>
+        <h1 data-i="about"></h1>
+        <h2 data-i="app"></h2>
+        <div class="card">
+          <div class="row"><span><strong>CursorTip <span id="about-version"></span></strong><span id="update-status" class="updates" role="status"></span></span><button id="update-btn" class="btn" data-action="check" data-i="check"></button></div>
+          <div class="row"><span><strong class="name"><img class="github-mark" src="data:image/x-icon;base64,{{GITHUB_ICON}}" width="18" height="18" alt=""><span data-i="repository"></span></strong><span class="updates" data-i="starNote"></span></span><button class="btn" data-action="repository" data-i="openRepository"></button></div>
+          <div class="row"><span class="credits">© 2026 zeno528 · MIT License</span><button class="quiet" data-action="changelog" data-i="changelog"></button></div>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+<script>
+'use strict';
+const words = {
+  zh: {
+    general:'常规', position:'位置', look:'外观', about:'关于', behavior:'提示与行为', startup:'开机启动', caps:'大小写提示',
+    ime:'显示中 / 英状态', copy:'复制提示', selection:'选中文字时', count:'仅显示字数', autoCopy:'自动复制并显示字数', off:'关闭',
+    duration:'显示时长', copySelection:'复制与选中提示', placement:'浮标位置', mouse:'跟随鼠标', top:'屏幕顶部', bottom:'屏幕底部',
+    center:'屏幕中央', mouseOffset:'离鼠标距离', mouseSide:'鼠标方位', below:'右下', above:'右上', topOffset:'距屏幕顶部',
+    bottomOffset:'距屏幕底部', preview:'预览浮标', tipStyle:'浮标样式', theme:'主题', system:'跟随系统', light:'浅色', dark:'深色',
+    fontSize:'字号', bold:'加粗', app:'应用', interface:'界面', language:'界面语言', check:'检查更新', upgrade:'立即升级', sidebarUpgrade:'升级', changelog:'更新日志',
+    repository:'项目仓库', starNote:'觉得 CursorTip 有用？欢迎点个 Star。', openRepository:'打开 GitHub',
+    reset:'恢复默认', increase:'增大', decrease:'减小', sampleTitle:'实时预览', sample:'大写 · 中文',
+    checking:'正在检查…', uptodate:'已是最新版本', available:'发现新版本', downloading:'正在下载…', failed:'检查失败', saveError:'无法保存设置，请重试'
+  },
+  en: {
+    general:'General', position:'Position', look:'Appearance', about:'About', behavior:'Tips and behavior', startup:'Run at startup', caps:'Caps Lock tip',
+    ime:'Show input language', copy:'Copy tip', selection:'On text selection', count:'Show count only', autoCopy:'Copy + show count', off:'Off',
+    duration:'Display duration', copySelection:'Copy and selection tips', placement:'Tip placement', mouse:'Cursor', top:'Top', bottom:'Bottom',
+    center:'Center', mouseOffset:'Cursor distance', mouseSide:'Cursor corner', below:'Below right', above:'Above right', topOffset:'Top offset',
+    bottomOffset:'Bottom offset', preview:'Preview tip', tipStyle:'Tip style', theme:'Theme', system:'Follow system', light:'Light', dark:'Dark',
+    fontSize:'Font size', bold:'Bold', app:'Application', interface:'Interface', language:'App language', check:'Check for updates', upgrade:'Upgrade', sidebarUpgrade:'Upgrade', changelog:'Changelog',
+    repository:'Project repository', starNote:'If CursorTip helps, consider giving it a star.', openRepository:'Open GitHub',
+    reset:'Restore defaults', increase:'Increase', decrease:'Decrease', sampleTitle:'Live preview', sample:'CAPS · EN',
+    checking:'Checking…', uptodate:'Up to date', available:'New version', downloading:'Downloading…', failed:'Check failed', saveError:'Could not save. Try again.'
+  }
+};
+const keys = ['startup','caps','ime','copy','selection','capsMs','copyMs','position','mouseOffset','mouseAbove','topOffset','bottomOffset','fontSize','bold','theme','language'];
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
+const bridge = window.chrome?.webview;
+const post = (message) => bridge?.postMessage(message);
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
+let draft, defaults, requested, systemLang, t, update = [], saveError = false;
+
+for (const field of $$('[data-number]')) {
+  const {number:key, for:label, step, min='0', max, unit} = field.dataset;
+  field.innerHTML = '<div class="stepper"><button type="button" data-step="-1"><svg aria-hidden="true"><use href="#minus"/></svg></button>'
+    + '<input type="number" aria-labelledby="' + label + '" aria-describedby="' + key + '-unit" min="' + min + '" max="' + max + '" step="' + step + '" data-key="' + key + '">'
+    + '<button type="button" data-step="1"><svg aria-hidden="true"><use href="#plus"/></svg></button></div>'
+    + '<span class="unit" id="' + key + '-unit">' + unit + '</span>';
+}
+
+function translated() {
+  const lang = draft.language === 'auto' ? systemLang : draft.language;
+  t = words[lang] || words.en;
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  for (const item of $$('[data-i]')) item.textContent = t[item.dataset.i];
+  for (const item of $$('[data-label]')) item.setAttribute('aria-label', t[item.dataset.label]);
+  $('.tabs').setAttribute('aria-label', lang === 'zh' ? '设置' : 'Settings');
+  for (const row of $$('[data-number]')) {
+    const label = document.getElementById(row.dataset.for).textContent;
+    for (const button of row.querySelectorAll('[data-step]'))
+      button.setAttribute('aria-label', label + ' · ' + t[button.dataset.step === '1' ? 'increase' : 'decrease']);
+  }
+}
+
+function syncControls() {
+  for (const control of $$('[data-key]')) {
+    const value = draft[control.dataset.key];
+    if (control.type === 'checkbox') control.checked = value === '1';
+    else if (control.type === 'radio') control.checked = control.value === value;
+    else control.value = value;
+  }
+  render();
+}
+
+function normalized(control, fallback) {
+  const value = control.valueAsNumber;
+  return Number.isFinite(value) ? String(Math.max(+control.min, Math.min(+control.max, Math.round(value)))) : fallback;
+}
+
+function payload() {
+  return keys.map(key => draft[key]).join('|');
+}
+
+function apply() {
+  const values = payload();
+  if (values !== requested) {
+    requested = values;
+    saveError = false;
+    post('apply|' + values);
+  }
+  render();
+}
+
+function render() {
+  $('[data-key="ime"]').disabled = draft.caps !== '1';
+  for (const row of $$('[data-position]')) row.hidden = row.dataset.position !== draft.position;
+  $('#position-fields').hidden = draft.position === '2';
+  for (const row of $$('[data-number]')) {
+    const input = row.querySelector('input');
+    row.querySelector('[data-step="-1"]').disabled = input.value !== '' && +input.value <= +input.min;
+    row.querySelector('[data-step="1"]').disabled = input.value !== '' && +input.value >= +input.max;
+  }
+  const sample = $('#sample');
+  sample.textContent = t.sample;
+  sample.style.fontSize = normalized($('[data-key="fontSize"]'), defaults.fontSize) + 'pt';
+  sample.style.fontWeight = draft.bold === '1' ? '700' : '400';
+  sample.classList.toggle('dark', draft.theme === 'dark' || draft.theme === 'auto' && systemDark.matches);
+  $('#error').textContent = saveError ? t.saveError : '';
+  renderUpdate();
+}
+
+function renderUpdate() {
+  const [status, version, progress] = update;
+  const available = status === 'available';
+  const downloading = status === 'downloading';
+  const button = $('#update-btn');
+  button.textContent = available || downloading ? t.upgrade : t.check;
+  button.disabled = status === 'checking' || downloading;
+  $('#update-status').textContent = (t[status] || '') + (available ? ' v' + version : '') +
+    (downloading && progress ? ' ' + progress + ' MB' : '');
+
+  const pill = $('#sidebar-update');
+  pill.hidden = !available && !downloading;
+  pill.disabled = downloading;
+  pill.textContent = downloading ? '…' : t.sidebarUpgrade;
+  pill.title = downloading ? t.downloading : t.upgrade + ' v' + version;
+  pill.setAttribute('aria-label', pill.title);
+}
+
+function chooseTab(button, focus = false) {
+  for (const tab of $$('[role="tab"]')) {
+    const selected = tab === button;
+    tab.setAttribute('aria-selected', selected);
+    tab.tabIndex = selected ? 0 : -1;
+    document.getElementById(tab.getAttribute('aria-controls')).hidden = !selected;
+  }
+  $('.page').scrollTop = 0;
+  if (focus) button.focus();
+}
+
+function preview() { post('preview|' + payload()); }
+function step(input, direction) {
+  const start = Number(normalized(input, defaults[input.dataset.key]));
+  input.value = Math.max(+input.min, Math.min(+input.max, start + direction * +input.step));
+  commitNumber(input);
+}
+
+function commitNumber(input) {
+  const key = input.dataset.key;
+  input.value = draft[key] = normalized(input, draft[key]);
+  apply();
+}
+
+function closeSettings() {
+  if (document.activeElement.matches('input[type="number"]')) commitNumber(document.activeElement);
+  post('close');
+}
+
+document.addEventListener('input', ({target}) => {
+  if (!target.dataset.key) return;
+  if (target.type === 'number') { render(); return; }
+  draft[target.dataset.key] = target.type === 'checkbox' ? String(+target.checked) : target.value;
+  if (target.dataset.key === 'language') translated();
+  apply();
+});
+document.addEventListener('change', ({target}) => {
+  if (target.type === 'number') commitNumber(target);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { closeSettings(); return; }
+  if (event.key === 'Enter' && event.target.type === 'number') commitNumber(event.target);
+  const tab = event.target.closest('[role="tab"]');
+  if (tab && ['ArrowDown','ArrowUp','Home','End'].includes(event.key)) {
+    event.preventDefault();
+    const tabs = $$('[role="tab"]');
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 :
+      (tabs.indexOf(tab) + (event.key === 'ArrowDown' ? 1 : tabs.length - 1)) % tabs.length;
+    chooseTab(tabs[next], true);
+  }
+  if (event.target.closest('.stepper') && event.target.type === 'number' && ['ArrowUp','ArrowDown'].includes(event.key)) {
+    event.preventDefault();
+    step(event.target, event.key === 'ArrowUp' ? 1 : -1);
+  }
+});
+document.addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.getAttribute('role') === 'tab') { chooseTab(button); return; }
+  const {action, step:direction} = button.dataset;
+  if (direction) step(button.parentElement.querySelector('input'), +direction);
+  if (action === 'reset') {
+    for (const {dataset:{key}} of button.closest('.panel').querySelectorAll('[data-key]'))
+      draft[key] = defaults[key];
+    translated();
+    syncControls();
+    apply();
+  } else if (action === 'preview') preview();
+  else if (['check','changelog','repository'].includes(action)) post(action);
+});
+systemDark.addEventListener('change', () => { if (draft) render(); });
+
+function init(version, lang, current, base) {
+  systemLang = lang;
+  draft = Object.fromEntries(keys.map((key, i) => [key, current[i]]));
+  defaults = Object.fromEntries(keys.map((key, i) => [key, base[i]]));
+  $('#version').textContent = $('#about-version').textContent = 'v' + version;
+  requested = current.join('|');
+  translated();
+  syncControls();
+  $('#app').hidden = false;
+  post('painted');
+}
+bridge?.addEventListener('message', ({data}) => {
+  const [type, ...parts] = data.split('|');
+  if (type === 'init') init(parts[0], parts[1], parts.slice(2,18), parts.slice(18,34));
+  if (type === 'update') { update = parts; if (t) renderUpdate(); }
+  if (type === 'closing') closeSettings();
+  if (type === 'apply-unavailable' && parts.join('|') === requested) {
+    requested = '';
+    saveError = true;
+    render();
+  }
+  if (type === 'apply-error' && parts.slice(0, keys.length).join('|') === requested) {
+    const current = parts.slice(keys.length);
+    requested = current.join('|');
+    draft = Object.fromEntries(keys.map((key, i) => [key, current[i]]));
+    saveError = true;
+    translated();
+    syncControls();
+  }
+});
+post('ready');
+</script>
+</body>
+</html>
