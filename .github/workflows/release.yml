@@ -144,6 +144,10 @@ jobs:
           首次使用建议下载 `CursorTip_v$env:VERSION.zip`，解压到固定目录，双击 `CursorTip_v$env:VERSION.exe` 运行即可使用。
 
           > 首次可能被 SmartScreen 拦截，点「更多信息 → 仍要运行」即可（本项目未做代码签名）。
+
+          ## 反馈与建议
+
+          遇到问题，或有想加的功能？欢迎到 GitHub 提交反馈。报告 Bug 时，附上 CursorTip 版本、出问题的应用和复现步骤，会更容易定位。 [提交反馈](https://github.com/zeno528/CursorTip/issues/new)
           "@
           Set-Content -Path 'dist\RELEASE_BODY.md' -Value $draft -Encoding UTF8
           "----- Release body 预览 -----"
