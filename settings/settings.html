@@ -51,17 +51,17 @@ h1 { font-size: 23px; line-height: 1.2; margin: 0; letter-spacing: -.025em; font
 h2 { font-size: 12px; margin: 13px 0 5px; color: var(--muted); font-weight: 650; }
 .card { border: 1px solid var(--line); border-radius: 9px; background: var(--card); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 6px 10px; min-height: 39px; }
-.card > * + * { border-top: 1px solid var(--line); }
+.card > *:not([hidden]) ~ *:not([hidden]) { border-top: 1px solid var(--line); }
 .name { display: inline-flex; align-items: center; gap: 9px; min-width: 0; }
 .name svg { color: var(--muted); width: 16px; height: 16px; }
 .row.child { position: relative; padding-left: 35px; min-height: 33px; color: var(--muted); }
 .row.child::before { content: ""; position: absolute; inset: 0 auto 50% 17px; width: 10px; border: solid var(--muted); border-width: 0 0 1px 1px; border-bottom-left-radius: 4px; opacity: .55; }
 .row.child:has(:disabled) { opacity: .6; }
 .field { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.switch { appearance: none; flex: 0 0 auto; width: 34px; height: 20px; border: 1px solid var(--muted); border-radius: 20px; background: var(--rail); margin: 0; cursor: pointer; position: relative; }
-.switch::before { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); left: 3px; top: 3px; }
+.switch { appearance: none; flex: 0 0 auto; width: 34px; height: 20px; border: 1px solid var(--muted); border-radius: 20px; background: var(--rail); margin: 0; cursor: pointer; position: relative; transition: background-color .2s ease, border-color .2s ease; }
+.switch::before { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); left: 3px; top: 3px; transition: transform .2s ease, background-color .2s ease; }
 .switch:checked { background: var(--accent); border-color: var(--accent); }
-.switch:checked::before { left: 17px; background: var(--accent-ink); }
+.switch:checked::before { transform: translateX(14px); background: var(--accent-ink); }
 .switch:disabled { cursor: default; }
 select { background: var(--paper); border: 1px solid var(--line); padding: 5px 8px; max-width: 100%; }
 @supports selector(select:open) {
