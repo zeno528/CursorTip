@@ -44,7 +44,7 @@ Tips appear as floating bubbles on screen and auto-dismiss after a few seconds w
 
 By default, CursorTip shows the selected character count. To copy selected text automatically, enable **Auto-copy selection** in Settings; it is off by default. It copies **plain text**, replacing the existing clipboard contents, and shows the copied character count on success.
 
-**Selection tip** and **Auto-copy selection** are mutually exclusive: enabling either turns the other off. Both can also be disabled. Selection detection relies on the target app exposing text through Windows UI Automation, so it does not work in every app. In Excel, text can be selected while editing inside a cell; selecting the cell itself is not a text selection. Counts use UTF-16 code units, consistent with copy feedback.
+Under **When text is selected**, choose **Show count only**, **Copy and show count**, or **Off**. Selection detection relies on the target app exposing text through Windows UI Automation, so it does not work in every app. In Excel, text can be selected while editing inside a cell; selecting the cell itself is not a text selection. Counts use UTF-16 code units, consistent with copy feedback.
 
 Regular copy feedback supports:
 
@@ -74,7 +74,7 @@ Click the tray icon, or right-click → Settings. Appearance and position change
 
 | Group | Options |
 |:------|:--------|
-| **Features** | Run at startup · Caps lock tip · IME status · Copy tip · Selection tip · Auto-copy selection |
+| **Features** | Run at startup · Caps lock tip · IME status · Copy tip · When text is selected |
 | **Duration** | Separate durations for caps and copy/selection tips (slider range: 100–3000 ms) |
 | **Position** | Follow mouse (above / below) · screen top · screen bottom · screen center; offset is adjustable for mouse, top and bottom |
 | **Appearance** | Follow system / Light / Dark · font size · bold |
