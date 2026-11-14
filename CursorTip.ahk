@@ -1460,7 +1460,22 @@ GetSelectionCharCount(&selectedText) {
             IID_TextPattern := Buffer(16, 0)
             DllCall("ole32\CLSIDFromString", "wstr", "{32EBA289-3583-42C9-9C59-3B6D9A1E9B6A}", "ptr", IID_TextPattern, "hresult")
         }
-        ComCall(8, uia, "ptr*", &pElem := 0)                                  ; GetFocusedElement
+        pElem := 0
+        if (hwnd := WpsSpreadsheetHostWithCellEdit()) {
+            ; 单元格内选区同步到编辑栏。直接查询编辑栏的 UIA 元素，无需把焦点移过去。
+            formulaBar := 0
+            for ctrl in WinGetControlsHwnd("ahk_id " hwnd) {
+                if (!DllCall("IsWindowVisible", "ptr", ctrl) || WinGetClass("ahk_id " ctrl) != "EXCEL<")
+                    continue
+                if (formulaBar)
+                    return -1
+                formulaBar := ctrl
+            }
+            if (formulaBar)
+                ComCall(6, uia, "ptr", formulaBar, "ptr*", &pElem)            ; ElementFromHandle
+        } else {
+            ComCall(8, uia, "ptr*", &pElem)                                    ; GetFocusedElement
+        }
         if (!pElem)
             return -1
         elem := ComValue(13, pElem)                                           ; VT_UNKNOWN，GC 时自动 Release
@@ -1516,57 +1531,14 @@ GetSelectionCharCount(&selectedText) {
     }
 }
 
-; WPS 表格未通过 UIA 返回选区时，用原生复制命令取高亮文字。
-; shortcut: 系统剪贴板历史可能记录临时选区，WPS 提供可读选区接口后改为直接读取。
-ReadWpsCellSelection(focus) {
-    global autoCopySequence
-    if (GetKeyState("Shift", "P") || GetKeyState("Alt", "P") || GetKeyState("LWin", "P") || GetKeyState("RWin", "P"))
-        return ""
-    pid := WinGetPID("ahk_id " focus)
-    Critical("On")
-    try {
-        before := DllCall("GetClipboardSequenceNumber", "uint")
-        saved := ClipboardAll()
-        ; ClipboardAll 会跳过不支持的格式，不能完整恢复时不执行复制。
-        formats := Map()
-        offset := 0
-        while (format := NumGet(saved, offset, "uint")) {
-            formats[format] := true
-            offset += 8 + NumGet(saved, offset + 4, "uint")
-        }
-        count := formats.Count
-        if (formats.Has(13)) {
-            ; Windows 可用 Unicode 文本自动生成 ANSI 和 OEM 文本。
-            for format in [1, 7]
-                count += !formats.Has(format) && DllCall("IsClipboardFormatAvailable", "uint", format)
-        }
-        if (count != DllCall("CountClipboardFormats") || !before
-            || before != DllCall("GetClipboardSequenceNumber", "uint") || ControlGetFocus("A") != focus)
-            return ""
-
-        SendInput("^{Insert}")
-        deadline := A_TickCount + 150
-        while ((seq := DllCall("GetClipboardSequenceNumber", "uint")) = before && A_TickCount < deadline)
-            Sleep(10)
-        if (seq = before)
-            return ""
-        owner := DllCall("GetClipboardOwner", "ptr")
-        DllCall("GetWindowThreadProcessId", "ptr", owner, "uint*", &ownerPid := 0)
-        if (ownerPid != pid)
-            return ""
-        try {
-            return ControlGetFocus("A") = focus ? A_Clipboard : ""
-        } finally {
-            ; 其他应用已更新剪贴板时，保留新的内容。
-            if (DllCall("GetClipboardSequenceNumber", "uint") = seq) {
-                A_Clipboard := saved
-                autoCopySequence := DllCall("GetClipboardSequenceNumber", "uint")
-            }
-        }
-    } catch as e {
-        ErrorLog("WPS selection probe failed: " . e.Message)
-        return ""
-    } finally Critical("Off")
+WpsSpreadsheetHostWithCellEdit() {
+    hwnd := WinActive("ahk_exe wps.exe")
+    if (!hwnd)
+        hwnd := WinActive("ahk_exe et.exe")
+    if (!hwnd)
+        return 0
+    focus := ControlGetFocus("ahk_id " hwnd)
+    return focus && WinGetClass("ahk_id " focus) = "EXCEL6" ? hwnd : 0
 }
 
 ; 选中字数浮标入口：左键/Shift 松开时调用。
@@ -1575,30 +1547,19 @@ MaybeShowSelectTip() {
     if (!Config.enableSelectTip && !Config.autoCopySelection)
         return
     n := GetSelectionCharCount(&selectedText := "")
-    if (n <= 0) {
+    if (n <= 0 && Config.enableSelectTip && !Config.autoCopySelection) {
         try {
-            hwnd := WinActive("ahk_exe wps.exe")
-            if (!hwnd)
-                hwnd := WinActive("ahk_exe et.exe")
-            if (hwnd) {
-                focus := ControlGetFocus("ahk_id " hwnd)
-                focusClass := focus ? WinGetClass("ahk_id " focus) : ""
-                if (focusClass = "EXCEL6" || focusClass = "EXCEL<") {
-                    selectedText := ReadWpsCellSelection(focus)
-                    n := StrLen(selectedText)
-                } else if (Config.enableSelectTip && !Config.autoCopySelection
-                    && WinActive("ahk_class OpusApp ahk_exe wps.exe") = hwnd
-                    && WinGetList("ahk_class OpusApp ahk_exe wps.exe").Length = 1) {
-                    ; 统一宿主的表格窗口也可能是 OpusApp。
-                    for ctrl in WinGetControlsHwnd("ahk_id " hwnd) {
-                        if (DllCall("IsWindowVisible", "ptr", ctrl) && WinGetClass("ahk_id " ctrl) = "EXCEL7")
-                            return
-                    }
-                    ; shortcut: 多个 WPS 文字窗口时无法确认 COM 对象对应前台窗口，需窗口级关联后再支持。
-                    selection := ComObjActive("kwps.Application").Selection
-                    if (selection.Active && selection.Start < selection.End)
-                        n := StrLen(selection.Text)
+            if ((hwnd := WinActive("ahk_class OpusApp ahk_exe wps.exe"))
+                && WinGetList("ahk_class OpusApp ahk_exe wps.exe").Length = 1) {
+                ; 统一宿主的表格窗口也可能是 OpusApp。
+                for ctrl in WinGetControlsHwnd("ahk_id " hwnd) {
+                    if (DllCall("IsWindowVisible", "ptr", ctrl) && WinGetClass("ahk_id " ctrl) = "EXCEL7")
+                        return
                 }
+                ; shortcut: 多个 WPS 文字窗口时无法确认 COM 对象对应前台窗口，需窗口级关联后再支持。
+                selection := ComObjActive("kwps.Application").Selection
+                if (selection.Active && selection.Start < selection.End)
+                    n := StrLen(selection.Text)
             }
         }
     }
