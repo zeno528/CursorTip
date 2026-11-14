@@ -3,17 +3,22 @@ name: Branch Test Release
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: '要构建的远程分支，例如 codex/webview2-settings（Use workflow from 选 main）'
+      release_type:
+        description: '发行类型'
         required: true
-        type: string
+        type: choice
+        default: '草稿'
+        options:
+          - '草稿'
+          - '预发行'
+          - '正式发行'
 
 permissions: {}
 
 jobs:
   build:
     if: >-
-      github.repository == 'zeno528/CursorTip' && github.ref == 'refs/heads/main' &&
+      github.repository == 'zeno528/CursorTip' && github.ref_type == 'branch' &&
       github.actor == github.repository_owner && github.triggering_actor == github.repository_owner
     runs-on: windows-latest
     timeout-minutes: 15
@@ -24,21 +29,10 @@ jobs:
       version: ${{ steps.package.outputs.version }}
       artifact: ${{ steps.upload.outputs.artifact-id }}
     steps:
-      - name: 校验测试分支
-        shell: pwsh
-        env:
-          TEST_BRANCH: ${{ inputs.branch }}
-        run: |
-          if (!$env:TEST_BRANCH -or $env:TEST_BRANCH -eq 'main') {
-            throw '请选择 main 以外的测试分支。'
-          }
-          git check-ref-format "refs/heads/$env:TEST_BRANCH"
-          if ($LASTEXITCODE -ne 0) { throw '分支名称无效。' }
-
-      - name: 检出测试分支
+      - name: 检出所选分支的触发提交
         uses: actions/checkout@v7
         with:
-          ref: refs/heads/${{ inputs.branch }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: 下载 AutoHotkey 和 Ahk2Exe
@@ -87,7 +81,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  draft:
+  release:
     needs: build
     if: github.actor == github.repository_owner && github.triggering_actor == github.repository_owner
     runs-on: ubuntu-latest
@@ -101,19 +95,38 @@ jobs:
           artifact-ids: ${{ needs.build.outputs.artifact }}
           path: dist
 
-      - name: 创建 GitHub Release 草稿
+      - name: 创建 GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TEST_BRANCH: ${{ inputs.branch }}
+          SOURCE_BRANCH: ${{ github.ref_name }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
           BUILD_SHA: ${{ needs.build.outputs.sha }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           tag="test-v${VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          title="CursorTip v${VERSION} · ${RELEASE_TYPE} · ${SOURCE_BRANCH}"
+          case "$RELEASE_TYPE" in
+            草稿) flags=(--draft --latest=false) ;;
+            预发行) flags=(--prerelease --latest=false) ;;
+            正式发行)
+              tag="v${VERSION}"
+              title="CursorTip ${tag}"
+              flags=()
+              ;;
+            *) echo '未知发行类型'; exit 1 ;;
+          esac
+          if git ls-remote --exit-code --refs "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git" "refs/tags/${tag}"; then
+            echo "标签 $tag 已存在，请使用新版本号或新的测试运行。"
+            exit 1
+          elif [[ $? != 2 ]]; then
+            echo "无法校验远程标签 $tag。"
+            exit 1
+          fi
           base="dist/CursorTip_v${VERSION}"
           test -s "$base.exe" && test -s "$base.zip" || { echo '缺少 exe 或 zip'; exit 1; }
-          notes=$(printf '分支测试构建\n\n- 分支：%s\n- 提交：%s\n- 版本：v%s\n' "$TEST_BRANCH" "$BUILD_SHA" "$VERSION")
+          notes=$(printf '分支：%s\n\n提交：%s\n\n版本：v%s\n' "$SOURCE_BRANCH" "$BUILD_SHA" "$VERSION")
           url=$(gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$BUILD_SHA" \
-            --title "CursorTip v${VERSION} · 分支测试 · ${TEST_BRANCH}" --draft --prerelease --latest=false \
+            --title "$title" "${flags[@]}" \
             --notes "$notes" "$base.exe" "$base.zip")
-          printf '[查看测试发行草稿](%s)\n' "$url" >> "$GITHUB_STEP_SUMMARY"
+          printf '[查看 GitHub Release](%s)\n' "$url" >> "$GITHUB_STEP_SUMMARY"
