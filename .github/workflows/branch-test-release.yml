@@ -1,0 +1,119 @@
+name: Branch Test Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: '要构建的远程分支，例如 codex/webview2-settings（Use workflow from 选 main）'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  build:
+    if: >-
+      github.repository == 'zeno528/CursorTip' && github.ref == 'refs/heads/main' &&
+      github.actor == github.repository_owner && github.triggering_actor == github.repository_owner
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.package.outputs.sha }}
+      version: ${{ steps.package.outputs.version }}
+      artifact: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: 校验测试分支
+        shell: pwsh
+        env:
+          TEST_BRANCH: ${{ inputs.branch }}
+        run: |
+          if (!$env:TEST_BRANCH -or $env:TEST_BRANCH -eq 'main') {
+            throw '请选择 main 以外的测试分支。'
+          }
+          git check-ref-format "refs/heads/$env:TEST_BRANCH"
+          if ($LASTEXITCODE -ne 0) { throw '分支名称无效。' }
+
+      - name: 检出测试分支
+        uses: actions/checkout@v7
+        with:
+          ref: refs/heads/${{ inputs.branch }}
+          persist-credentials: false
+
+      - name: 下载 AutoHotkey 和 Ahk2Exe
+        shell: pwsh
+        run: |
+          $toolchain = Join-Path $env:RUNNER_TEMP 'ahk'
+          $runtimeZip = Join-Path $env:RUNNER_TEMP 'ahk.zip'
+          $compilerZip = Join-Path $env:RUNNER_TEMP 'ahk2exe.zip'
+          curl.exe -fsSL --retry 2 'https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.27/AutoHotkey_2.0.27.zip' -o $runtimeZip
+          if ($LASTEXITCODE -ne 0) { throw 'AutoHotkey 下载失败。' }
+          curl.exe -fsSL --retry 2 'https://github.com/AutoHotkey/Ahk2Exe/releases/download/Ahk2Exe1.1.37.02a2/Ahk2Exe1.1.37.02a2.zip' -o $compilerZip
+          if ($LASTEXITCODE -ne 0) { throw 'Ahk2Exe 下载失败。' }
+          Expand-Archive -LiteralPath $runtimeZip -DestinationPath $toolchain -Force
+          Expand-Archive -LiteralPath $compilerZip -DestinationPath $toolchain -Force
+
+      - name: 编译和打包 x64 测试包
+        id: package
+        shell: pwsh
+        run: |
+          $match = Select-String -LiteralPath 'VERSION.ahk' -Pattern '^\s*global VERSION\s*:=\s*"(\d+\.\d+\.\d+)"\s*$'
+          if (@($match).Count -ne 1) { throw 'VERSION.ahk 里找不到唯一的版本号。' }
+          $version = $match.Matches[0].Groups[1].Value
+          $sha = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw '无法读取构建提交。' }
+          $toolchain = Join-Path $env:RUNNER_TEMP 'ahk'
+          $output = Join-Path $env:RUNNER_TEMP 'branch-release'
+          New-Item -ItemType Directory -Path $output | Out-Null
+          $exe = Join-Path $output "CursorTip_v$version.exe"
+          $base = Join-Path $toolchain 'AutoHotkey64.exe'
+          $compiler = Join-Path $toolchain 'Ahk2Exe.exe'
+          $build = Start-Process -FilePath $compiler -ArgumentList ('/silent verbose /in "CursorTip.ahk" /out "{0}" /base "{1}"' -f $exe, $base) -Wait -PassThru
+          if ($build.ExitCode -ne 0 -or !(Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "编译失败，退出码 $($build.ExitCode)。"
+          }
+          $zip = Join-Path $output "CursorTip_v$version.zip"
+          Compress-Archive -LiteralPath $exe, 'LICENSE' -DestinationPath $zip
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: 传递编译产物
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: branch-test-build-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/branch-release/*
+          retention-days: 7
+          if-no-files-found: error
+
+  draft:
+    needs: build
+    if: github.actor == github.repository_owner && github.triggering_actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: 接收编译产物
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact }}
+          path: dist
+
+      - name: 创建 GitHub Release 草稿
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_BRANCH: ${{ inputs.branch }}
+          BUILD_SHA: ${{ needs.build.outputs.sha }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          tag="test-v${VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          base="dist/CursorTip_v${VERSION}"
+          test -s "$base.exe" && test -s "$base.zip" || { echo '缺少 exe 或 zip'; exit 1; }
+          notes=$(printf '分支测试构建\n\n- 分支：%s\n- 提交：%s\n- 版本：v%s\n' "$TEST_BRANCH" "$BUILD_SHA" "$VERSION")
+          url=$(gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$BUILD_SHA" \
+            --title "CursorTip v${VERSION} · 分支测试 · ${TEST_BRANCH}" --draft --prerelease --latest=false \
+            --notes "$notes" "$base.exe" "$base.zip")
+          printf '[查看测试发行草稿](%s)\n' "$url" >> "$GITHUB_STEP_SUMMARY"
