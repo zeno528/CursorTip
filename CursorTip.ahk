@@ -20,6 +20,7 @@ A_HotkeyInterval := 0  ; 禁用热键频率限制警告（按住 Ctrl/Win 等修
 ; 版本（真源在 VERSION.ahk：发行工作流监听它变化自动触发发行）
 ; ============================================================
 #Include "VERSION.ahk"
+#Include "settings\WebSettings.ahk"
 
 ; ============================================================
 ; 配置管理类 — 统一管理所有配置项
@@ -123,8 +124,10 @@ class Config {
             IniWrite(c.tipFontBold ? 1 : 0, Config.Path, "Settings", "TipFontBold")
             IniWrite(c.tipLightMode, Config.Path, "Settings", "TipLightMode")
             IniWrite(c.language, Config.Path, "Settings", "Language")
+            return true
         } catch as e {
             MsgBox(T("err_save_config") . e.Message, T("err_title"), 16)
+            return false
         }
     }
 
@@ -361,6 +364,11 @@ OnExit(OnScriptExit)
 ; ============================================================
 ; 启动
 ; ============================================================
+if (A_Args.Length = 2 && A_Args[1] = "--settings") {
+    RunWebSettings(Integer(A_Args[2]))
+    return
+}
+
 ; 自动更新应用器：本 exe 被旧版本以 --update-apply <旧exe路径> <旧PID> 拉起的第二形态。
 ; 必须放在互斥体守卫之前——升级器是搬运工不抢锁；守卫通过后它同样被挡是靠旧实例先退出
 if (A_IsCompiled && A_Args.Length >= 3 && A_Args[1] = "--update-apply") {
@@ -417,7 +425,7 @@ MeasureTipFixedWidth()
 ; 更新相关启动项（详见「自动更新」段）
 SelfHealStartupPath()                   ; exe 被改名/移动（升级换版本文件名是典型）后重写自启注册表路径
 RestoreUpdateState()                    ; 恢复「已知有新版本」状态，24h 节流期内设置按钮仍可升
-SetTimer(CheckUpdateSilent, -10000)     ; 启动 10s 后静默检查更新（内部 24h 节流，发现新版弹托盘气泡）
+SetTimer(CheckUpdateSilent, -2500)      ; 启动 2.5s 后静默检查更新（内部 24h 节流，发现新版弹托盘气泡）
 
 return ; 自动执行段结束
 
@@ -586,6 +594,7 @@ SysProxyArg() {
 ; 窗口不在时静默跳过（timer 回调里摸已销毁控件会抛错）
 ApplyUpdateUI(g := 0) {
     global settingsGui, g_updateState, g_updateLatestVer
+    SendWebUpdateState()
     if !IsObject(g)
         g := settingsGui
     ; settingsGui 已关闭/重建间隙为 ""（String），必须先挡掉再摸 .Hwnd/.ctl_*，否则类型错误崩溃
@@ -633,7 +642,7 @@ OnUpdateButtonClick(ctl, *) {
     }
 }
 
-; 静默检查入口（启动 10s 后的 timer）：24h 节流。LastUpdateCheck 记发起时刻，
+; 静默检查入口：24h 节流。LastUpdateCheck 记发起时刻，
 ; 失败也算查过——网络差的环境每天最多打扰一次网络
 CheckUpdateSilent(*) {
     last := ""
@@ -708,17 +717,20 @@ UpdatePoll() {
     done := !ProcessExist(g_curlPid) || (A_TickCount - g_curlStart > wall)
     if !done {
         ; 下载中把进度写进状态文本（curl 边下边写文件，FileGetSize 即增量）
-        if (g_curlMode = "download" && g_updateState = "downloading"
-            && IsObject(settingsGui) && WinExist("ahk_id " . settingsGui.Hwnd)) {
+        if (g_curlMode = "download" && g_updateState = "downloading") {
             size := 0
             try size := FileGetSize(UPD_TEMP_EXE)
-            if (size > 0)
-                settingsGui.ctl_updStatus.Text := T("upd_downloading", Round(size / 1048576, 1))
+            if (size > 0) {
+                progress := Round(size / 1048576, 1)
+                SendWebUpdateState(progress)
+                if (IsObject(settingsGui) && WinExist("ahk_id " . settingsGui.Hwnd))
+                    settingsGui.ctl_updStatus.Text := T("upd_downloading", progress)
+            }
         }
         return
     }
     SetTimer(UpdatePoll, 0)
-    guiAlive := IsObject(settingsGui) && WinExist("ahk_id " . settingsGui.Hwnd)
+    guiAlive := WebSettingsConnected() || (IsObject(settingsGui) && WinExist("ahk_id " . settingsGui.Hwnd))
     if (g_curlMode = "check")
         FinishUpdateCheck()
     else
@@ -1377,7 +1389,7 @@ ShiftReleased() {
 ; 左键松开 = 拖选/双击/三击/Shift+点选的收尾动作，顺手报一次选中字数
 ~*LButton up:: {
     global shiftAlone := false
-    MaybeShowSelectTip()
+    MaybeShowSelectTip(true)
 }
 
 ; ============================================================
@@ -1456,13 +1468,13 @@ ClipChanged(dataType) {
 ; 选中文本计数与自动复制
 ; ============================================================
 
-; 读取焦点元素选区的字符数（UTF-16 码元，与复制提示 StrLen 同口径）。
+; 读取选区的字符数（UTF-16 码元，与复制提示 StrLen 同口径）。
 ; 纯拉取式只读查询：任何一步失败/无 TextPattern/无选区返回 -1 或 0，调用方静默忽略。
 ; 槽位与常量逐条核对自本机 SDK UIAutomationClient.idl/.h（10.0.26100.0）：
 ;   IUIAutomation::GetFocusedElement=8 ｜ IUIAutomationElement::GetCurrentPatternAs=14
 ;   IUIAutomationTextPattern::GetSelection=5 ｜ TextRangeArray::get_Length=3, GetElement=4
 ;   IUIAutomationTextRange::GetText=12 ｜ UIA_TextPatternId=10014
-GetSelectionCharCount(&selectedText) {
+GetSelectionCharCount(&selectedText, chromiumPoint := unset) {
     static uia := 0              ; CUIAutomation 实例，进程内复用
     static IID_TextPattern := 0  ; 二进制 GUID Buffer，供 REFIID 入参复用
     try {
@@ -1471,6 +1483,13 @@ GetSelectionCharCount(&selectedText) {
         if (!IsObject(IID_TextPattern)) {
             IID_TextPattern := Buffer(16, 0)
             DllCall("ole32\CLSIDFromString", "wstr", "{32EBA289-3583-42C9-9C59-3B6D9A1E9B6A}", "ptr", IID_TextPattern, "hresult")
+        }
+        ; Chromium 正文的选区可以挂在鼠标命中的元素或所属文档上。
+        if IsSet(chromiumPoint) && IsInteger(chromiumPoint) {
+            pHit := 0
+            try ComCall(7, uia, "int64", chromiumPoint, "ptr*", &pHit) ; ElementFromPoint
+            if pHit
+                return ReadChromiumSelection(uia, ComValue(13, pHit), IID_TextPattern, &selectedText)
         }
         pElem := 0
         if (hwnd := WpsSpreadsheetHostWithCellEdit()) {
@@ -1513,34 +1532,67 @@ GetSelectionCharCount(&selectedText) {
             if (!focused)
                 return -1
         }
-        ComCall(14, elem, "int", 10014, "ptr", IID_TextPattern, "ptr*", &pPat := 0)   ; GetCurrentPatternAs(TextPattern)
-        if (!pPat)                                                            ; 焦点元素不支持文本模式
-            return -1
-        pat := ComValue(13, pPat)
-        ComCall(5, pat, "ptr*", &pArr := 0)                                   ; GetSelection
-        if (!pArr)
-            return -1
-        arr := ComValue(13, pArr)
-        ComCall(3, arr, "int*", &nRanges := 0)                                ; get_Length
-        total := 0
-        selectedText := ""
-        Loop nRanges {
-            ComCall(4, arr, "int", A_Index - 1, "ptr*", &pRange := 0)         ; GetElement
-            if (!pRange)
-                continue
-            rng := ComValue(13, pRange)
-            ComCall(12, rng, "int", -1, "ptr*", &pBstr := 0)                  ; GetText(-1)
-            if (pBstr) {
-                total += DllCall("oleaut32\SysStringLen", "ptr", pBstr, "int")   ; BSTR 长度前缀 O(1)
-                if (Config.autoCopySelection)
-                    selectedText .= StrGet(pBstr, "UTF-16")
-                DllCall("oleaut32\SysFreeString", "ptr", pBstr)
-            }
-        }
-        return total
+        return IsSet(chromiumPoint) ? ReadChromiumSelection(uia, elem, IID_TextPattern, &selectedText)
+            : ReadSelectionText(elem, IID_TextPattern, &selectedText)
     } catch {
         return -1
     }
+}
+
+ReadChromiumSelection(uia, elem, iid, &selectedText) {
+    try {
+        if (n := ReadSelectionText(elem, iid, &selectedText)) > 0
+            return n
+    }
+    ComCall(16, uia, "ptr*", &pWalker := 0) ; RawViewWalker
+    if !pWalker
+        return -1
+    walker := ComValue(13, pWalker)
+    Loop 16 {
+        ComCall(3, walker, "ptr", elem, "ptr*", &pParent := 0) ; GetParentElement
+        if !pParent
+            break
+        elem := ComValue(13, pParent)
+        ComCall(21, elem, "int*", &kind := 0) ; CurrentControlType
+        if (kind = 50032) ; Window
+            break
+        if (kind = 50030) { ; Document
+            try {
+                if (n := ReadSelectionText(elem, iid, &selectedText)) > 0
+                    return n
+            }
+        }
+    }
+    return 0
+}
+
+ReadSelectionText(elem, iid, &selectedText) {
+    selectedText := ""
+    ComCall(14, elem, "int", 10014, "ptr", iid, "ptr*", &pPat := 0)
+    if !pPat
+        return -1
+    pat := ComValue(13, pPat)
+    ComCall(5, pat, "ptr*", &pArr := 0)
+    if !pArr
+        return -1
+    arr := ComValue(13, pArr)
+    ComCall(3, arr, "int*", &nRanges := 0)
+    total := 0
+    Loop nRanges {
+        ComCall(4, arr, "int", A_Index - 1, "ptr*", &pRange := 0)
+        if !pRange
+            continue
+        rng := ComValue(13, pRange)
+        ComCall(12, rng, "int", -1, "ptr*", &pBstr := 0)
+        if pBstr {
+            try {
+                total += DllCall("oleaut32\SysStringLen", "ptr", pBstr, "uint")
+                if Config.autoCopySelection
+                    selectedText .= StrGet(pBstr, "UTF-16")
+            } finally DllCall("oleaut32\SysFreeString", "ptr", pBstr)
+        }
+    }
+    return total
 }
 
 WpsSpreadsheetHostWithCellEdit() {
@@ -1554,11 +1606,41 @@ WpsSpreadsheetHostWithCellEdit() {
 }
 
 ; 选中字数浮标入口：左键/Shift 松开时调用。
-MaybeShowSelectTip() {
+MaybeShowSelectTip(mouse := false) {
+    static pending := 0
+    if pending
+        SetTimer(pending, 0)
+    pending := 0
+    if (!Config.enableSelectTip && !Config.autoCopySelection)
+        return
+    if (hwnd := WinActive("ahk_class Chrome_WidgetWin_1")) {
+        point := ""
+        if mouse {
+            ; GetCursorPos 使用屏幕坐标，不受其他热键的 CoordMode 影响。
+            pos := Buffer(8, 0)
+            if DllCall("GetCursorPos", "ptr", pos)
+                point := NumGet(pos, 0, "int64")
+        }
+        ; 鼠标松开后，Chromium 的 UIA 选区会异步更新。
+        pending := () => WinActive("ahk_id " hwnd) && !GetKeyState("LButton", "P") && ShowSelectTip(point, hwnd)
+        SetTimer(pending, -120)
+        return
+    }
+    ShowSelectTip()
+}
+
+ShowSelectTip(chromiumPoint := unset, sourceWindow := 0) {
     global autoCopySequence
     if (!Config.enableSelectTip && !Config.autoCopySelection)
         return
-    n := GetSelectionCharCount(&selectedText := "")
+    if IsSet(chromiumPoint) && IsInteger(chromiumPoint) {
+        hit := DllCall("WindowFromPoint", "int64", chromiumPoint, "ptr")
+        if (DllCall("GetAncestor", "ptr", hit, "uint", 2, "ptr") != sourceWindow)
+            return
+    }
+    n := GetSelectionCharCount(&selectedText := "", chromiumPoint?)
+    if (sourceWindow && !WinActive("ahk_id " sourceWindow))
+        return
     if (n <= 0 && Config.enableSelectTip && !Config.autoCopySelection) {
         try {
             if ((hwnd := WinActive("ahk_class OpusApp ahk_exe wps.exe"))
@@ -1597,7 +1679,7 @@ MaybeShowSelectTip() {
 ; ============================================================
 ; 设置窗口
 ; ============================================================
-ShowSettings(*) {
+ShowNativeSettings(*) {
     global settingsGui, settingsOpenPos, settingsSessionLang, settingsDraft, settingsConfigSnap
     ; 防止多开
     if (IsObject(settingsGui)) {
@@ -1787,11 +1869,11 @@ ApplyLanguage() {
         }
         settingsGui := ""   ; 让 ShowSettings 的防多开逻辑放行，能创建新窗口
         settingsDraft := snap   ; 草稿经全局变量传入：ShowSettings 在 Show 前应用，避免选中状态先跳默认再跳回的闪烁
-        ShowSettings()      ; 新窗口在旧位置显示，完整覆盖旧窗口（内部已恢复草稿）
+        ShowNativeSettings() ; 新窗口在旧位置显示，完整覆盖旧窗口
         if (IsObject(oldGui))
             oldGui.Destroy()   ; 旧窗口已被新窗口遮挡，销毁无视觉中断
     } else {
-        ShowSettings()
+        ShowNativeSettings()
     }
 }
 
