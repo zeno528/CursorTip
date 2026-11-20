@@ -45,7 +45,8 @@ class Config {
         tipFontSize: 9,
         tipFontBold: true,
         tipLightMode: "auto",
-        language: "auto"
+        language: "auto",
+        settingsUi: "web"        ; 设置界面：web=WebView2 native=原生窗口
     }
 
     ; 每个配置项声明为独立的静态属性（带默认值）
@@ -65,6 +66,7 @@ class Config {
     static tipFontBold := true
     static tipLightMode := "auto"
     static language := "auto"
+    static settingsUi := "web"
 
     ; 加载配置
     static Load() {
@@ -96,6 +98,7 @@ class Config {
             ; 兼容旧版布尔值（0/1）→ 新版字符串（"light"/"dark"/"auto"）
             c.tipLightMode := IsInteger(tipRaw) ? (tipRaw = 1 ? "light" : "dark") : tipRaw
             c.language := IniRead(Config.Path, "Settings", "Language", "auto")
+            c.settingsUi := IniRead(Config.Path, "Settings", "SettingsUi", "web")
         } catch {
             ; 读取失败，使用默认值
         }
@@ -124,6 +127,7 @@ class Config {
             IniWrite(c.tipFontBold ? 1 : 0, Config.Path, "Settings", "TipFontBold")
             IniWrite(c.tipLightMode, Config.Path, "Settings", "TipLightMode")
             IniWrite(c.language, Config.Path, "Settings", "Language")
+            IniWrite(c.settingsUi, Config.Path, "Settings", "SettingsUi")
             return true
         } catch as e {
             MsgBox(T("err_save_config") . e.Message, T("err_title"), 16)
@@ -179,6 +183,9 @@ global L := Map(
         "set_fontsize", "字号:",
         "set_bold", "加粗",
         "set_language", "语言",
+        "set_settingsui", "设置界面",
+        "ui_web", "新版界面",
+        "ui_native", "经典界面",
         "lang_auto", "跟随系统",
         "lang_zh", "简体中文",
         "lang_en", "English",
@@ -242,6 +249,9 @@ global L := Map(
         "set_fontsize", "Font size:",
         "set_bold", "Bold",
         "set_language", "Language",
+        "set_settingsui", "Settings UI",
+        "ui_web", "Modern",
+        "ui_native", "Classic",
         "lang_auto", "Auto",
         "lang_zh", "中文",
         "lang_en", "English",
@@ -320,7 +330,7 @@ global UPD_API := "https://github.com/zeno528/CursorTip/releases.atom"   ; Atom 
 global UPD_DL_BASE := "https://github.com/zeno528/CursorTip/releases/download/"
 global UPD_TEMP_JSON := A_Temp . "\CursorTip_update.json"
 global UPD_TEMP_EXE := A_Temp . "\CursorTip_update.exe"
-global SETTINGS_BASE_H := 596       ; 跟随鼠标时的基础高度，其他位置由 ReflowBelow 收缩
+global SETTINGS_BASE_H := 621       ; 跟随鼠标时的基础高度，其他位置由 ReflowBelow 收缩
 
 
 ; ============================================================
@@ -1802,28 +1812,33 @@ ShowNativeSettings(*) {
     g.ctl_lang := TrackBelow(g, g.Add("DDL", "x200 y458 w120 AltSubmit Choose" . langIdx, [T("lang_auto"), T("lang_zh"), T("lang_en")]))
     g.ctl_lang.OnEvent("Change", OnLangChange)
 
-    TrackBelow(g, g.Add("Text", "x10 y488 w320 h1 BackgroundDDDDDD"))
+    ; 设置界面切换（web=WebView2 / native=原生窗口），保存后立即切换
+    TrackBelow(g, g.Add("Text", "x20 y486 w120", T("set_settingsui")))
+    uiIdx := (Config.settingsUi = "web") ? 1 : 2
+    g.ctl_settingsUi := TrackBelow(g, g.Add("DDL", "x200 y483 w120 AltSubmit Choose" . uiIdx, [T("ui_web"), T("ui_native")]))
+
+    TrackBelow(g, g.Add("Text", "x10 y513 w320 h1 BackgroundDDDDDD"))
 
     ; === 版本 ===
     g.SetFont("Bold")
-    TrackBelow(g, g.Add("Text", "x20 y500", T("about_title")))
+    TrackBelow(g, g.Add("Text", "x20 y525", T("about_title")))
     g.SetFont("Norm")
-    TrackBelow(g, g.Add("Text", "x+8 y501", "v" . VERSION)).SetFont("s9 c666666")
-    g.ctl_updStatus := TrackBelow(g, g.Add("Text", "x130 y500 w114", ""))
-    g.ctl_updBtn := TrackBelow(g, g.Add("Button", "x244 y498 w76 h24", T("btn_check_update")))
+    TrackBelow(g, g.Add("Text", "x+8 y526", "v" . VERSION)).SetFont("s9 c666666")
+    g.ctl_updStatus := TrackBelow(g, g.Add("Text", "x130 y525 w114", ""))
+    g.ctl_updBtn := TrackBelow(g, g.Add("Button", "x244 y523 w76 h24", T("btn_check_update")))
     g.ctl_updBtn.OnEvent("Click", OnUpdateButtonClick)
     ; 底部信息（更新日志）
     icoPath := A_Temp . "\CursorTip_site.ico"
     FileInstall("assets\github.ico", icoPath, 1)
-    TrackBelow(g, g.Add("Picture", "x20 y529 w16 h16", icoPath)).OnEvent("Click", (*) => Run("https://cursortip-website.pages.dev/"))
+    TrackBelow(g, g.Add("Picture", "x20 y554 w16 h16", icoPath)).OnEvent("Click", (*) => Run("https://cursortip-website.pages.dev/"))
     g.SetFont("s8", "Microsoft YaHei")
-    TrackBelow(g, g.Add("Link", "x40 y531", '<a href="https://cursortip-website.pages.dev/">' . T("link_about") . '</a>'))
-    TrackBelow(g, g.Add("Text", "x200 y531", "© 2026  MIT License"))
+    TrackBelow(g, g.Add("Link", "x40 y556", '<a href="https://cursortip-website.pages.dev/">' . T("link_about") . '</a>'))
+    TrackBelow(g, g.Add("Text", "x200 y556", "© 2026  MIT License"))
     g.SetFont("s10")
-    TrackBelow(g, g.Add("Text", "x10 y552 w320 h1 BackgroundDDDDDD"))
-    TrackBelow(g, g.Add("Button", "x20 y562 w80", T("btn_reset"))).OnEvent("Click", SettingsReset)
-    TrackBelow(g, g.Add("Button", "x130 y562 w80", T("btn_cancel"))).OnEvent("Click", SettingsClose)
-    TrackBelow(g, g.Add("Button", "x240 y562 w80 Default", T("btn_save"))).OnEvent("Click", SettingsSave)
+    TrackBelow(g, g.Add("Text", "x10 y577 w320 h1 BackgroundDDDDDD"))
+    TrackBelow(g, g.Add("Button", "x20 y587 w80", T("btn_reset"))).OnEvent("Click", SettingsReset)
+    TrackBelow(g, g.Add("Button", "x130 y587 w80", T("btn_cancel"))).OnEvent("Click", SettingsClose)
+    TrackBelow(g, g.Add("Button", "x240 y587 w80 Default", T("btn_save"))).OnEvent("Click", SettingsSave)
     g.OnEvent("Close", SettingsClose)
 
     ; 禁用 DWM 窗口过渡动画（DWMWA_TRANSITIONS_FORCEDISABLED=3）：新窗口瞬间不透明显示，
@@ -1901,7 +1916,8 @@ SnapshotSettings(g) {
         bold: g.ctl_bold.Value,
         themeAuto: g.ctl_themeAuto.Value,
         lightMode: g.ctl_lightMode.Value,
-        darkMode: g.ctl_darkMode.Value
+        darkMode: g.ctl_darkMode.Value,
+        settingsUi: g.ctl_settingsUi.Value
     }
 }
 
@@ -1926,6 +1942,7 @@ RestoreSettings(g, s) {
     g.ctl_themeAuto.Value := s.themeAuto
     g.ctl_lightMode.Value := s.lightMode
     g.ctl_darkMode.Value := s.darkMode
+    g.ctl_settingsUi.Value := s.settingsUi
 }
 
 ; 快照/恢复 Config 的视觉属性（取消预览时回滚用）
@@ -2184,6 +2201,7 @@ SettingsReset(ctrl, *) {
     g.ctl_lightMode.Value := (d.tipLightMode = "light")
     g.ctl_darkMode.Value := (d.tipLightMode = "dark")
     g.ctl_lang.Value := Map("auto",1,"zh",2,"en",3)[d.language]
+    g.ctl_settingsUi.Value := 1   ; 默认 web
 
     ; 控件已复位，Config 内存与预览一并复位：否则后续任何改动触发预览时，
     ; 仍按复位前的样式渲染（旧字号/主题残留在 Config 里）
@@ -2195,7 +2213,7 @@ SettingsReset(ctrl, *) {
     ShowTip(GetPreviewText(), Config.capsShowDuration, true)
 }
 
-; 保存和恢复默认共用；功能开关仅在保存时生效。
+; 恢复默认后同步 Config 内存（保持预览一致）；保存路径的同步由 ApplySettingsValues 统一负责
 SyncPreviewFromGui(g) {
     c := Config
     c.capsShowDuration := IsInteger(g.ctl_capsDur.Value) ? Max(100, Integer(g.ctl_capsDur.Value)) : Config.Defaults.capsShowDuration
@@ -2218,22 +2236,39 @@ SettingsSave(ctrl, *) {
     global settingsGui, settingsSessionLang, settingsConfigSnap
     g := ctrl.Gui
 
-    SetStartup(g.ctl_startup.Value)
-    SyncPreviewFromGui(g)
-    Config.enableCapsTip := g.ctl_caps.Value
-    Config.enableCopyTip := g.ctl_copy.Value
-    Config.enableSelectTip := g.ctl_selection.Value = 1
-    Config.autoCopySelection := g.ctl_selection.Value = 2
-    Config.showIMEStatus := g.ctl_ime.Value
-    Config.language := ["auto", "zh", "en"][g.ctl_lang.Value]
-
-    Config.Save()
-    ApplySettings()
+    ; 控件 → 17 值数组（序同 WebSettingsValues），统一走 ApplySettingsValues 落盘生效
+    oldSettingsUi := Config.settingsUi
+    newSettingsUi := (g.ctl_settingsUi.Value = 1) ? "web" : "native"
+    v := [
+        g.ctl_startup.Value ? 1 : 0,
+        g.ctl_caps.Value ? 1 : 0,
+        g.ctl_ime.Value ? 1 : 0,
+        g.ctl_copy.Value ? 1 : 0,
+        g.ctl_selection.Value,
+        ClampNum(g.ctl_capsDur.Value, 100, 2147483647, Config.Defaults.capsShowDuration),
+        ClampNum(g.ctl_copyDur.Value, 100, 2147483647, Config.Defaults.copyShowDuration),
+        [1, 3, 4, 2][g.ctl_posSeg],   ; 选项条序号 → tipPosition
+        ClampNum(g.ctl_mouseOffset.Value, 0, 100, Config.Defaults.tipMouseOffset),
+        g.ctl_mouseTr.Value ? 1 : 0,
+        ClampNum(g.ctl_topOffset.Value, 0, 500, Config.Defaults.tipTopOffset),
+        ClampNum(g.ctl_bottomOffset.Value, 0, 500, Config.Defaults.tipBottomOffset),
+        ClampNum(g.ctl_fontSize.Value, 8, 72, Config.Defaults.tipFontSize),
+        g.ctl_bold.Value ? 1 : 0,
+        g.ctl_themeAuto.Value ? "auto" : (g.ctl_lightMode.Value ? "light" : "dark"),
+        ["auto", "zh", "en"][g.ctl_lang.Value],
+        newSettingsUi
+    ]
+    ok := ApplySettingsValues(v)
 
     g.Destroy()
     settingsGui := ""
     settingsSessionLang := ""
     settingsConfigSnap := ""
 
-    ShowTip(T("msg_saved"), 800)
+    if (ok = 1) {
+        ShowTip(T("msg_saved"), 800)
+        ; 设置界面选择变化 → 立即按新偏好打开（另一侧窗口）；落盘失败 Config.Save 已弹过错误框
+        if (newSettingsUi != oldSettingsUi)
+            ShowSettings()
+    }
 }

@@ -6,6 +6,10 @@ ShowSettings(*) {
         ShowNativeSettings()
         return
     }
+    if (Config.settingsUi = "native") {
+        ShowNativeSettings()
+        return
+    }
     state := WebSettingsState()
     if (state.pid && ProcessExist(state.pid)) {
         if (hwnd := WinExist("ahk_class AutoHotkeyGUI ahk_pid " state.pid))
@@ -112,7 +116,7 @@ WebSettingsValues(source, startup) {
         source.enableCopyTip ? 1 : 0, SelectionModeOf(source), source.capsShowDuration,
         source.copyShowDuration, source.tipPosition, source.tipMouseOffset, source.tipMouseAbove ? 1 : 0,
         source.tipTopOffset, source.tipBottomOffset, source.tipFontSize, source.tipFontBold ? 1 : 0,
-        source.tipLightMode, source.language]
+        source.tipLightMode, source.language, source.settingsUi]
 }
 
 JoinSettingsValues(values) {
@@ -124,7 +128,7 @@ JoinSettingsValues(values) {
 
 ReadWebSettingsValues(payload) {
     v := StrSplit(payload, "|")
-    if (v.Length != 16)
+    if (v.Length != 17)
         return 0
     for index, limits in [[0,1],[0,1],[0,1],[0,1],[1,3],[100,2147483647],[100,2147483647],
         [1,4],[0,100],[0,1],[0,500],[0,500],[8,72],[0,1]] {
@@ -132,7 +136,7 @@ ReadWebSettingsValues(payload) {
             return 0
         v[index] := Integer(v[index])
     }
-    if !RegExMatch(v[15], "^(auto|light|dark)$") || !RegExMatch(v[16], "^(auto|zh|en)$")
+    if !RegExMatch(v[15], "^(auto|light|dark)$") || !RegExMatch(v[16], "^(auto|zh|en)$") || !RegExMatch(v[17], "^(web|native)$")
         return 0
     return v
 }
@@ -148,6 +152,23 @@ ApplyWebAppearance(v) {
     Config.tipLightMode := v[15]
 }
 
+; 统一保存管线（两个设置界面共用）：校验 → 写 Config → 落盘 → ApplySettings → 开机启动按需变更。
+; v 为 17 值数组（序同 WebSettingsValues）。返回 1=成功；0=校验失败；-1=落盘失败（Config 内存已回滚）
+ApplySettingsValues(v) {
+    if !(v := ReadWebSettingsValues(JoinSettingsValues(v)))
+        return 0
+    old := WebSettingsValues(Config, false)
+    ApplyWebValues(v)
+    if !Config.Save() {
+        ApplyWebValues(old)
+        return -1
+    }
+    ApplySettings()
+    if (v[1] != IsStartupEnabled())
+        SetStartup(v[1])
+    return 1
+}
+
 CommitWebSettings() {
     Critical()
     state := WebSettingsState()
@@ -160,19 +181,11 @@ CommitWebSettings() {
     desired := JoinSettingsValues(v)
     ; The first value is managed in the registry and does not require an INI write.
     if (SubStr(desired, 3) != SubStr(JoinSettingsValues(old), 3)) {
-        ApplyWebValues(v)
-        if Config.Save()
-            ApplySettings()
-        else {
-            ApplyWebValues(old)
+        result := ApplySettingsValues(v)
+        if (result != 1)
             ReportWebSettingsError(pending.sender, desired)
-            return
-        }
-    }
-    if (old[1] != v[1]) {
-        SetStartup(v[1])
-        if (IsStartupEnabled() != v[1])
-            ReportWebSettingsError(pending.sender, desired)
+        else if (old[17] != v[17])
+            SetTimer(SwitchToNativeSettings, -1)   ; 用户选了经典界面：关掉本窗口，立即打开原生设置
     }
 }
 
@@ -180,6 +193,14 @@ ReportWebSettingsError(sender, desired) {
     state := WebSettingsState()
     if (sender = state.child && SettingsSenderMatches(sender, state.pid))
         SendSettingsMessage(sender, "apply-error|" desired "|" JoinSettingsValues(WebSettingsValues(Config, IsStartupEnabled())))
+}
+
+; 设置界面偏好切到 native：通知设置子进程自毁，然后在托盘进程打开原生设置窗口
+SwitchToNativeSettings() {
+    state := WebSettingsState()
+    if state.child
+        SendSettingsMessage(state.child, "close-ui")
+    SetTimer(ShowNativeSettings, -1)
 }
 
 ApplyWebValues(v) {
@@ -192,6 +213,7 @@ ApplyWebValues(v) {
     Config.capsShowDuration := v[6]
     Config.copyShowDuration := v[7]
     Config.language := v[16]
+    Config.settingsUi := v[17]
 }
 
 RunWebSettings(parent) {
@@ -425,7 +447,9 @@ class SettingsWebView {
         if (sender != this.parent || !SettingsSenderMatches(sender, this.parentPid))
             return 0
         message := ReadSettingsMessage(data)
-        if (SubStr(message, 1, 12) = "apply-error|" || SubStr(message, 1, 7) = "update|")
+        if (message = "close-ui")
+            SetTimer(ObjBindMethod(this, "Close"), -1)
+        else if (SubStr(message, 1, 12) = "apply-error|" || SubStr(message, 1, 7) = "update|")
             SetTimer(ObjBindMethod(this, "Post", message), -1)
         return 1
     }

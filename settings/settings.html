@@ -179,6 +179,7 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
         <h2 data-i="interface"></h2>
         <div class="card">
           <label class="row"><span class="name"><svg aria-hidden="true"><use href="#language"/></svg><span data-i="language"></span></span><select data-key="language"><option value="auto" data-i="system"></option><option value="zh">简体中文</option><option value="en">English</option></select></label>
+          <label class="row"><span class="name"><svg aria-hidden="true"><use href="#screen"/></svg><span data-i="settingsUi"></span></span><select data-key="settingsUi"><option value="web" data-i="uiModern"></option><option value="native" data-i="uiClassic"></option></select></label>
         </div>
       </section>
       <section id="position" class="panel" role="tabpanel" aria-labelledby="tab-position" hidden>
@@ -236,7 +237,8 @@ const words = {
     duration:'显示时长', copySelection:'复制与选中提示', placement:'浮标位置', mouse:'跟随鼠标', top:'屏幕顶部', bottom:'屏幕底部',
     center:'屏幕中央', mouseOffset:'离鼠标距离', mouseSide:'鼠标方位', below:'右下', above:'右上', topOffset:'距屏幕顶部',
     bottomOffset:'距屏幕底部', preview:'预览浮标', tipStyle:'浮标样式', theme:'主题', system:'跟随系统', light:'浅色', dark:'深色',
-    fontSize:'字号', bold:'加粗', app:'应用', interface:'界面', language:'界面语言', check:'检查更新', upgrade:'立即升级', sidebarUpgrade:'升级', changelog:'更新日志',
+    fontSize:'字号', bold:'加粗', app:'应用', interface:'界面', language:'界面语言', settingsUi:'设置界面', uiModern:'新版界面', uiClassic:'经典界面',
+    check:'检查更新', upgrade:'立即升级', sidebarUpgrade:'升级', changelog:'更新日志',
     repository:'项目仓库', starNote:'觉得 CursorTip 有用？欢迎点个 Star。', openRepository:'打开 GitHub',
     reset:'恢复默认', increase:'增大', decrease:'减小', sampleTitle:'实时预览', sample:'大写 · 中文',
     checking:'正在检查…', uptodate:'已是最新版本', available:'发现新版本', downloading:'正在下载…', failed:'检查失败', saveError:'无法保存设置，请重试'
@@ -247,13 +249,14 @@ const words = {
     duration:'Display duration', copySelection:'Copy and selection tips', placement:'Tip placement', mouse:'Cursor', top:'Top', bottom:'Bottom',
     center:'Center', mouseOffset:'Cursor distance', mouseSide:'Cursor corner', below:'Below right', above:'Above right', topOffset:'Top offset',
     bottomOffset:'Bottom offset', preview:'Preview tip', tipStyle:'Tip style', theme:'Theme', system:'Follow system', light:'Light', dark:'Dark',
-    fontSize:'Font size', bold:'Bold', app:'Application', interface:'Interface', language:'App language', check:'Check for updates', upgrade:'Upgrade', sidebarUpgrade:'Upgrade', changelog:'Changelog',
+    fontSize:'Font size', bold:'Bold', app:'Application', interface:'Interface', language:'App language', settingsUi:'Settings UI', uiModern:'Modern', uiClassic:'Classic',
+    check:'Check for updates', upgrade:'Upgrade', sidebarUpgrade:'Upgrade', changelog:'Changelog',
     repository:'Project repository', starNote:'If CursorTip helps, consider giving it a star.', openRepository:'Open GitHub',
     reset:'Restore defaults', increase:'Increase', decrease:'Decrease', sampleTitle:'Live preview', sample:'CAPS · EN',
     checking:'Checking…', uptodate:'Up to date', available:'New version', downloading:'Downloading…', failed:'Check failed', saveError:'Could not save. Try again.'
   }
 };
-const keys = ['startup','caps','ime','copy','selection','capsMs','copyMs','position','mouseOffset','mouseAbove','topOffset','bottomOffset','fontSize','bold','theme','language'];
+const keys = ['startup','caps','ime','copy','selection','capsMs','copyMs','position','mouseOffset','mouseAbove','topOffset','bottomOffset','fontSize','bold','theme','language','settingsUi'];
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const bridge = window.chrome?.webview;
@@ -442,7 +445,7 @@ function init(version, lang, current, base) {
 }
 bridge?.addEventListener('message', ({data}) => {
   const [type, ...parts] = data.split('|');
-  if (type === 'init') init(parts[0], parts[1], parts.slice(2,18), parts.slice(18,34));
+  if (type === 'init') init(parts[0], parts[1], parts.slice(2,19), parts.slice(19,38));
   if (type === 'update') { update = parts; if (t) renderUpdate(); }
   if (type === 'closing') closeSettings();
   if (type === 'apply-unavailable' && parts.join('|') === requested) {
