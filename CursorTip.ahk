@@ -32,7 +32,7 @@ class Config {
     static Defaults := {
         enableCapsTip: true,
         enableCopyTip: true,
-        enableSelectTip: true,
+        enableSelectTip: false,
         autoCopySelection: false,
         showIMEStatus: true,
         capsShowDuration: 800,
@@ -51,7 +51,7 @@ class Config {
     ; 每个配置项声明为独立的静态属性（带默认值）
     static enableCapsTip := true
     static enableCopyTip := true
-    static enableSelectTip := true
+    static enableSelectTip := false
     static autoCopySelection := false
     static showIMEStatus := true
     static capsShowDuration := 800
@@ -75,7 +75,7 @@ class Config {
             c := Config
             c.enableCapsTip := IniRead(Config.Path, "Settings", "EnableCapsTip", 1) = 1
             c.enableCopyTip := IniRead(Config.Path, "Settings", "EnableCopyTip", 1) = 1
-            c.enableSelectTip := IniRead(Config.Path, "Settings", "EnableSelectTip", 1) = 1
+            c.enableSelectTip := IniRead(Config.Path, "Settings", "EnableSelectTip", 0) = 1
             c.autoCopySelection := IniRead(Config.Path, "Settings", "AutoCopySelection", 0) = 1
             if (c.autoCopySelection)
                 c.enableSelectTip := false
